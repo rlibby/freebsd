@@ -64,6 +64,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/bitset.h>
+#include <sys/fail.h>
 #include <sys/kernel.h>
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -2096,6 +2097,23 @@ uma_zalloc_arg(uma_zone_t zone, void *udata, int flags)
 	if (flags & M_WAITOK) {
 		WITNESS_WARN(WARN_GIANTOK | WARN_SLEEPOK, NULL,
 		    "uma_zalloc_arg: zone \"%s\"", zone->uz_name);
+	} else {
+		KFAIL_POINT_CODE(DEBUG_FP, uma_zalloc_arg, {
+			/*
+			 * XXX hack.  Setting the fail point to 0 (default)
+			 * causes it to ignore malloc zones, nonzero causes it
+			 * to inject failures for malloc zones regardless of
+			 * the malloc black/white lists.
+			 */
+			if (((zone->uz_flags & UMA_ZONE_MALLOC) == 0 ||
+			    RETURN_VALUE != 0) &&
+			    uma_dbg_nowait_fail_enabled_zalloc(
+			    zone->uz_name)) {
+				/* XXX record call stack */
+				atomic_add_long(&zone->uz_fails, 1);
+				return NULL;
+			}
+		});
 	}
 	KASSERT(curthread->td_critnest == 0 || SCHEDULER_STOPPED(),
 	    ("uma_zalloc_arg: called with spinlock or critical section held"));
