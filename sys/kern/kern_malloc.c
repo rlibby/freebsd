@@ -50,6 +50,7 @@ __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/fail.h>
 #include <sys/kdb.h>
 #include <sys/kernel.h>
 #include <sys/lock.h>
@@ -472,6 +473,19 @@ malloc(unsigned long size, struct malloc_type *mtp, int flags)
 		}
 	}
 #endif
+	if (flags & M_NOWAIT) {
+		KFAIL_POINT_CODE(DEBUG_FP, malloc, {
+			if (uma_dbg_nowait_fail_enabled_malloc(
+			    mtp->ks_shortdesc)) {
+				/* XXX record call stack */
+#ifdef MALLOC_MAKE_FAILURES
+				atomic_add_int(&malloc_failure_count, 1);
+				t_malloc_fail = time_uptime;
+#endif
+				return (NULL);
+			}
+		});
+	}
 	if (flags & M_WAITOK)
 		KASSERT(curthread->td_intr_nesting_level == 0,
 		   ("malloc(M_WAITOK) in interrupt context"));

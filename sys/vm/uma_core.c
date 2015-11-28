@@ -218,13 +218,6 @@ struct uma_bucket_zone bucket_zones[] = {
 	{ NULL, NULL, 0}
 };
 
-/* XXX explain */
-struct rwlock g_zalloc_fail_list_lock;
-#define ZALLOC_FAIL_LIST_BUFSIZE 4096
-char zalloc_fail_blacklist[ZALLOC_FAIL_LIST_BUFSIZE] =
-    "BUF TRIE,ata_request,sackhole";
-char zalloc_fail_whitelist[ZALLOC_FAIL_LIST_BUFSIZE] = "";
-
 /*
  * Flags and enumerations to be passed to internal functions.
  */
@@ -276,7 +269,6 @@ void uma_print_zone(uma_zone_t);
 void uma_print_stats(void);
 static int sysctl_vm_zone_count(SYSCTL_HANDLER_ARGS);
 static int sysctl_vm_zone_stats(SYSCTL_HANDLER_ARGS);
-static int sysctl_debug_uma_zalloc_fail_list(SYSCTL_HANDLER_ARGS);
 
 #ifdef INVARIANTS
 static void uma_dbg_free(uma_zone_t zone, uma_slab_t slab, void *item);
@@ -284,29 +276,12 @@ static void uma_dbg_alloc(uma_zone_t zone, uma_slab_t slab, void *item);
 #endif
 
 SYSINIT(uma_startup3, SI_SUB_VM_CONF, SI_ORDER_SECOND, uma_startup3, NULL);
-RW_SYSINIT(zalloc_fail_list, &g_zalloc_fail_list_lock, "zalloc fail list");
 
 SYSCTL_PROC(_vm, OID_AUTO, zone_count, CTLFLAG_RD|CTLTYPE_INT,
     0, 0, sysctl_vm_zone_count, "I", "Number of UMA zones");
 
 SYSCTL_PROC(_vm, OID_AUTO, zone_stats, CTLFLAG_RD|CTLTYPE_STRUCT,
     0, 0, sysctl_vm_zone_stats, "s,struct uma_type_header", "Zone Stats");
-
-SYSCTL_NODE(_debug, OID_AUTO, mnowait_failure, CTLFLAG_RW, 0,
-    "Control of M_NOWAIT memory allocation failure injection.");
-
-SYSCTL_PROC(_debug_mnowait_failure, OID_AUTO, zalloc_blacklist,
-    CTLTYPE_STRING | CTLFLAG_RW | CTLFLAG_MPSAFE, zalloc_fail_blacklist,
-    sizeof(zalloc_fail_blacklist), sysctl_debug_uma_zalloc_fail_list, "A",
-    "With debug.fail_point.uma_zalloc_arg and with an empty whitelist, CSV "
-    "list of zones which remain unaffected.");
-
-SYSCTL_PROC(_debug_mnowait_failure, OID_AUTO, zalloc_whitelist,
-    CTLTYPE_STRING | CTLFLAG_RW | CTLFLAG_MPSAFE, zalloc_fail_whitelist,
-    sizeof(zalloc_fail_whitelist), sysctl_debug_uma_zalloc_fail_list, "A",
-    "With debug.fail_point.uma_zalloc_arg, CSV list of zones exclusively "
-    "affected.  With an empty whitelist, all zones but those on the blacklist"
-    "are affected.");
 
 static int zone_warnings = 1;
 SYSCTL_INT(_vm, OID_AUTO, zone_warnings, CTLFLAG_RWTUN, &zone_warnings, 0,
@@ -2107,26 +2082,6 @@ uma_zdestroy(uma_zone_t zone)
 	sx_sunlock(&uma_drain_lock);
 }
 
-static inline bool
-str_in_list(const char *list, char delim, const char *str)
-{
-       const char *b, *e;
-       size_t blen, slen;
-
-       b = list;
-       slen = strlen(str);
-       for (;;) {
-               e = strchr(b, delim);
-               blen = e == NULL ? strlen(b) : e - b;
-               if (blen == slen && strncmp(b, str, slen) == 0)
-                       return true;
-               if (e == NULL)
-                       break;
-               b = e + 1;
-       }
-       return false;
-}
-
 /* See uma.h */
 void *
 uma_zalloc_arg(uma_zone_t zone, void *udata, int flags)
@@ -2152,16 +2107,16 @@ uma_zalloc_arg(uma_zone_t zone, void *udata, int flags)
 		    "uma_zalloc_arg: zone \"%s\"", zone->uz_name);
 	} else {
 		KFAIL_POINT_CODE(DEBUG_FP, uma_zalloc_arg, {
-			bool fail;
-			/* Protect ourselves from the sysctl handler. */
-			rw_rlock(&g_zalloc_fail_list_lock);
-			fail = (zalloc_fail_whitelist[0] == '\0') ?
-			    !str_in_list(zalloc_fail_blacklist, ',',
-			        zone->uz_name) :
-			    str_in_list(zalloc_fail_whitelist, ',',
-			        zone->uz_name);
-			rw_runlock(&g_zalloc_fail_list_lock);
-			if (fail) {
+			/*
+			 * XXX hack.  Setting the fail point to 0 (default)
+			 * causes it to ignore malloc zones, nonzero causes it
+			 * to inject failures for malloc zones regardless of
+			 * the malloc black/white lists.
+			 */
+			if (((zone->uz_flags & UMA_ZONE_MALLOC) == 0 ||
+			    RETURN_VALUE != 0) &&
+			    uma_dbg_nowait_fail_enabled_zalloc(
+			    zone->uz_name)) {
 				/* XXX record call stack */
 				atomic_add_long(&zone->uz_fails, 1);
 				return NULL;
@@ -3569,54 +3524,6 @@ skip:
 	error = sbuf_finish(&sbuf);
 	sbuf_delete(&sbuf);
 	return (error);
-}
-
-/*
- * XXX provide SYSCTL_STRING_LOCKED / sysctl_string_locked_handler?
- * This is basically just a different sysctl_string_handler.  This one wraps
- * the string manipulation in a lock and in a way that will not cause a sleep
- * under that lock.
- */
-static int
-sysctl_debug_uma_zalloc_fail_list(SYSCTL_HANDLER_ARGS)
-{
-	char *newbuf = NULL;
-	int error, newlen;
-	bool have_lock = false;
-
-	if (req->newptr != NULL) {
-		newlen = req->newlen - req->newidx;
-		if (newlen >= arg2) {
-			error = EINVAL;
-			goto out;
-		}
-		newbuf = malloc(newlen, M_TEMP, M_WAITOK);
-		error = SYSCTL_IN(req, newbuf, newlen);
-		if (error != 0)
-			goto out;
-	}
-
-	error = sysctl_wire_old_buffer(req, arg2);
-	if (error != 0)
-		goto out;
-
-	rw_wlock(&g_zalloc_fail_list_lock);
-	have_lock = true;
-
-	error = SYSCTL_OUT(req, arg1, strnlen(arg1, arg2 - 1) + 1);
-	if (error != 0)
-		goto out;
-
-	if (newbuf == NULL)
-		goto out;
-
-	bcopy(newbuf, arg1, newlen);
-	((char *)arg1)[newlen] = '\0';
- out:
-	if (have_lock)
-		rw_wunlock(&g_zalloc_fail_list_lock);
-	free(newbuf, M_TEMP);
-	return error;
 }
 
 int

@@ -421,6 +421,9 @@ vsetslab(vm_offset_t va, uma_slab_t slab)
 void *uma_small_alloc(uma_zone_t zone, vm_size_t bytes, uint8_t *pflag,
     int wait);
 void uma_small_free(void *mem, vm_size_t size, uint8_t flags);
+
+bool uma_dbg_nowait_fail_enabled_malloc(const char *name);
+bool uma_dbg_nowait_fail_enabled_zalloc(const char *name);
 #endif /* _KERNEL */
 
 #endif /* VM_UMA_INT_H */
