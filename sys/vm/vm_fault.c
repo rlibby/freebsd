@@ -836,21 +836,22 @@ vnode_locked:
 				 */
 			    fs.object == fs.first_object->backing_object) {
 				/*
+				 * grab the page and put it into the
+				 * process'es object.
+				 */
+				if (vm_page_replace(fs.m, fs.first_object,
+				    fs.first_pindex) != fs.first_m)
+					panic("%s: invalid page replacement",
+					    __func__);
+				vm_page_dirty(fs.m);
+
+				/*
 				 * get rid of the unnecessary page
 				 */
 				vm_page_lock(fs.first_m);
 				vm_page_free(fs.first_m);
 				vm_page_unlock(fs.first_m);
-				/*
-				 * grab the page and put it into the 
-				 * process'es object.  The page is 
-				 * automatically made dirty.
-				 */
-				if (vm_page_rename(fs.m, fs.first_object,
-				    fs.first_pindex)) {
-					unlock_and_deallocate(&fs);
-					goto RetryFault;
-				}
+
 #if VM_NRESERVLEVEL > 0
 				/*
 				 * Rename the reservation.

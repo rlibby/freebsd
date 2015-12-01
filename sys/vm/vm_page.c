@@ -1319,45 +1319,44 @@ vm_page_prev(vm_page_t m)
  * Uses the page mnew as a replacement for an existing page at index
  * pindex which must be already present in the object.
  *
- * The existing page must not be on a paging queue.
+ * The object(s) must be locked.
  */
 vm_page_t
 vm_page_replace(vm_page_t mnew, vm_object_t object, vm_pindex_t pindex)
 {
-	vm_page_t mold, mpred;
+	vm_page_t mold;
 
 	VM_OBJECT_ASSERT_WLOCKED(object);
 
 	/*
-	 * This function mostly follows vm_page_insert() and
-	 * vm_page_remove() without the radix, object count and vnode
-	 * dance.  Double check such functions for more comments.
+	 * Insert the new page into the object in place of an old page.
+	 * Remove it from its old object first if necessary.
 	 */
-	mpred = vm_radix_lookup(&object->rtree, pindex);
-	KASSERT(mpred != NULL,
-	    ("vm_page_replace: replacing page not present with pindex"));
-	mpred = TAILQ_PREV(mpred, respgs, listq);
-	if (mpred != NULL)
-		KASSERT(mpred->pindex < pindex,
-		    ("vm_page_insert_after: mpred doesn't precede pindex"));
-
+	vm_page_lock(mnew);
+	if (mnew->object != NULL)
+		vm_page_remove(mnew);
 	mnew->object = object;
 	mnew->pindex = pindex;
 	mold = vm_radix_replace(&object->rtree, mnew);
-	KASSERT(mold->queue == PQ_NONE,
-	    ("vm_page_replace: mold is on a paging queue"));
+	vm_page_unlock(mnew);
 
-	/* Detach the old page from the resident tailq. */
+	/* Remove the old page from the object. */
+	vm_page_lock(mold);
+	if (vm_page_xbusied(mold)) {
+		vm_page_flash(mold);
+		atomic_store_rel_int(&mold->busy_lock, VPB_UNBUSIED);
+	}
+	mold->object = NULL;
+	vm_page_unlock(mold);
+
+	/* Replace the page in the resident tailq. */
+	TAILQ_INSERT_AFTER(&object->memq, mold, mnew, listq);
 	TAILQ_REMOVE(&object->memq, mold, listq);
 
-	mold->object = NULL;
-	vm_page_xunbusy(mold);
-
-	/* Insert the new page in the resident tailq. */
-	if (mpred != NULL)
-		TAILQ_INSERT_AFTER(&object->memq, mpred, mnew, listq);
-	else
-		TAILQ_INSERT_HEAD(&object->memq, mnew, listq);
+	/*
+	 * The object's resident_page_count does not change because we have
+	 * swapped one page for another, but OBJ_MIGHTBEDIRTY.
+	 */
 	if (pmap_page_is_write_mapped(mnew))
 		vm_object_set_writeable_dirty(object);
 	return (mold);
