@@ -836,22 +836,15 @@ vnode_locked:
 				 */
 			    fs.object == fs.first_object->backing_object) {
 				/*
-				 * get rid of the unnecessary page
+				 * Grab the page and put it into the
+				 * process'es object.
 				 */
-				vm_page_lock(fs.first_m);
-				vm_page_remove(fs.first_m);
-				vm_page_unlock(fs.first_m);
-				/*
-				 * grab the page and put it into the 
-				 * process'es object.  The page is 
-				 * automatically made dirty.
-				 */
-				if (vm_page_rename(fs.m, fs.first_object,
-				    fs.first_pindex)) {
-					VM_OBJECT_WUNLOCK(fs.first_object);
-					unlock_and_deallocate(&fs);
-					goto RetryFault;
-				}
+				vm_page_lock(fs.m);
+				vm_page_remove(fs.m);
+				vm_page_unlock(fs.m);
+				vm_page_replace_checked(fs.m, fs.first_object,
+				    fs.first_pindex, fs.first_m);
+				vm_page_dirty(fs.m);
 				vm_page_lock(fs.first_m);
 				vm_page_free(fs.first_m);
 				vm_page_unlock(fs.first_m);
