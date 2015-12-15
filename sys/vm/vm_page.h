@@ -491,7 +491,7 @@ void vm_page_unhold_pages(vm_page_t *ma, int count);
 boolean_t vm_page_unwire(vm_page_t m, uint8_t queue);
 void vm_page_updatefake(vm_page_t m, vm_paddr_t paddr, vm_memattr_t memattr);
 void vm_page_wire (vm_page_t);
-void vm_page_xunbusy_hard(vm_page_t m);
+void vm_page_xunbusy_hard(vm_page_t m, boolean_t locked);
 void vm_page_set_validclean (vm_page_t, int, int);
 void vm_page_clear_dirty (vm_page_t, int, int);
 void vm_page_set_invalid (vm_page_t, int, int);
@@ -547,10 +547,13 @@ void vm_page_lock_assert_KBI(vm_page_t m, int a, const char *file, int line);
 		    m);							\
 } while (0)
 
+#define	vm_page_tryxunbusy(m)						\
+	(atomic_cmpset_rel_int(&(m)->busy_lock,				\
+	    VPB_SINGLE_EXCLUSIVER, VPB_UNBUSIED))
+
 #define	vm_page_xunbusy(m) do {						\
-	if (!atomic_cmpset_rel_int(&(m)->busy_lock,			\
-	    VPB_SINGLE_EXCLUSIVER, VPB_UNBUSIED))			\
-		vm_page_xunbusy_hard(m);				\
+	if (!vm_page_tryxunbusy(m))					\
+		vm_page_xunbusy_hard((m), 0);				\
 } while (0)
 
 #ifdef INVARIANTS

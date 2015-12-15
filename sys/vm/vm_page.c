@@ -759,19 +759,44 @@ vm_page_trysbusy(vm_page_t m)
 /*
  *	vm_page_xunbusy_hard:
  *
- *	Called after the first try the exclusive unbusy of a page failed.
+ *	Called after vm_page_tryxunbusy of a page failed.
  *	It is assumed that the waiters bit is on.
  */
 void
-vm_page_xunbusy_hard(vm_page_t m)
+vm_page_xunbusy_hard(vm_page_t m, boolean_t locked)
 {
 
 	vm_page_assert_xbusied(m);
+	vm_page_lock_assert(m, locked ? MA_OWNED : MA_NOTOWNED);
 
-	vm_page_lock(m);
+	if (!locked)
+		vm_page_lock(m);
 	atomic_store_rel_int(&m->busy_lock, VPB_UNBUSIED);
 	wakeup(m);
-	vm_page_unlock(m);
+	if (!locked)
+		vm_page_unlock(m);
+}
+
+/*
+ *	vm_page_remove_xunbusy:
+ *
+ *	In the context of vm_page_remove and vm_page_replace, the page being
+ *	removed may be xbusied.  Unbusy it if so.
+ *
+ *	The page must be locked if it is managed.
+ */
+static inline void
+vm_page_remove_xunbusy(vm_page_t m)
+{
+	boolean_t locked;
+
+	if (!vm_page_xbusied(m))
+		return;
+	if (!vm_page_tryxunbusy(m)) {
+		locked = (m->oflags & VPO_UNMANAGED) == 0 ||
+		    mtx_owned(vm_page_lockptr(m));
+		vm_page_xunbusy_hard(m, locked);
+	}
 }
 
 /*
@@ -1204,31 +1229,21 @@ void
 vm_page_remove(vm_page_t m)
 {
 	vm_object_t object;
-	boolean_t lockacq;
 
 	if ((m->oflags & VPO_UNMANAGED) == 0)
-		vm_page_lock_assert(m, MA_OWNED);
+		vm_page_assert_locked(m);
 	if ((object = m->object) == NULL)
 		return;
 	VM_OBJECT_ASSERT_WLOCKED(object);
-	if (vm_page_xbusied(m)) {
-		lockacq = FALSE;
-		if ((m->oflags & VPO_UNMANAGED) != 0 &&
-		    !mtx_owned(vm_page_lockptr(m))) {
-			lockacq = TRUE;
-			vm_page_lock(m);
-		}
-		vm_page_flash(m);
-		atomic_store_rel_int(&m->busy_lock, VPB_UNBUSIED);
-		if (lockacq)
-			vm_page_unlock(m);
-	}
 
 	/*
 	 * Now remove from the object's list of backed pages.
 	 */
 	vm_radix_remove(&object->rtree, m->pindex);
 	TAILQ_REMOVE(&object->memq, m, listq);
+
+	m->object = NULL;
+	vm_page_remove_xunbusy(m);
 
 	/*
 	 * And show that the object has one fewer resident page.
@@ -1240,8 +1255,6 @@ vm_page_remove(vm_page_t m)
 	 */
 	if (object->resident_page_count == 0 && object->type == OBJT_VNODE)
 		vdrop(object->handle);
-
-	m->object = NULL;
 }
 
 /*
@@ -1319,7 +1332,7 @@ vm_page_prev(vm_page_t m)
  * Uses the page mnew as a replacement for an existing page at index
  * pindex which must be already present in the object.
  *
- * The existing page must not be on a paging queue.
+ * The object must be locked.  The old page must be locked if it is managed.
  */
 vm_page_t
 vm_page_replace(vm_page_t mnew, vm_object_t object, vm_pindex_t pindex)
@@ -1339,15 +1352,15 @@ vm_page_replace(vm_page_t mnew, vm_object_t object, vm_pindex_t pindex)
 	mnew->object = object;
 	mnew->pindex = pindex;
 	mold = vm_radix_replace(&object->rtree, mnew);
-	KASSERT(mold->queue == PQ_NONE,
-	    ("vm_page_replace: mold is on a paging queue"));
+	if ((mold->oflags & VPO_UNMANAGED) == 0)
+		vm_page_assert_locked(mold);
 
 	/* Keep the resident page list in sorted order. */
 	TAILQ_INSERT_AFTER(&object->memq, mold, mnew, listq);
 	TAILQ_REMOVE(&object->memq, mold, listq);
 
 	mold->object = NULL;
-	vm_page_xunbusy(mold);
+	vm_page_remove_xunbusy(mold);
 
 	/*
 	 * The object's resident_page_count does not change because we have

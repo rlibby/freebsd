@@ -842,12 +842,12 @@ vnode_locked:
 				vm_page_lock(fs.m);
 				vm_page_remove(fs.m);
 				vm_page_unlock(fs.m);
+				vm_page_lock(fs.first_m);
 				vm_page_replace_checked(fs.m, fs.first_object,
 				    fs.first_pindex, fs.first_m);
-				vm_page_dirty(fs.m);
-				vm_page_lock(fs.first_m);
 				vm_page_free(fs.first_m);
 				vm_page_unlock(fs.first_m);
+				vm_page_dirty(fs.m);
 #if VM_NRESERVLEVEL > 0
 				/*
 				 * Rename the reservation.
