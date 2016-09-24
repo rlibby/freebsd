@@ -3266,6 +3266,11 @@ xpt_run_devq(struct cam_devq *devq)
 			printf("device on run queue with no ccbs???\n");
 			continue;
 		}
+		KASSERT((work_ccb->ccb_h.status & CAM_STATUS_MASK) ==
+		    CAM_REQ_INPROG, ("%s: working on a ccb not in-progress! "
+		    "ccb=%p, func_code=%#x, status=%#x, index=%d", __func__,
+		    work_ccb, work_ccb->ccb_h.func_code,
+		    work_ccb->ccb_h.status, work_ccb->ccb_h.pinfo.index));
 
 		if ((work_ccb->ccb_h.flags & CAM_HIGH_POWER) != 0) {
 
