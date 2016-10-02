@@ -5189,6 +5189,10 @@ xpt_done_process(struct ccb_hdr *ccb_h)
 	struct cam_devq *devq;
 	struct mtx *mtx = NULL;
 
+	KASSERT(ccb_h->pinfo.index <= 0,
+	    ("%s: ccb %p index %d on ccbq", __func__, ccb_h,
+	     ccb_h->pinfo.index));
+
 	if (ccb_h->flags & CAM_HIGH_POWER) {
 		struct highpowerlist	*hphead;
 		struct cam_ed		*device;
