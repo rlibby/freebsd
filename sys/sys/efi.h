@@ -49,11 +49,6 @@ enum efi_reset {
 typedef uint16_t	efi_char;
 typedef unsigned long efi_status;
 
-struct efi_cfgtbl {
-	struct uuid	ct_uuid;
-	uint64_t	ct_data;
-};
-
 struct efi_md {
 	uint32_t	md_type;
 #define	EFI_MD_TYPE_NULL	0
@@ -120,47 +115,6 @@ struct efi_tblhdr {
 	uint32_t	th_hdrsz;
 	uint32_t	th_crc32;
 	uint32_t	__res;
-};
-
-struct efi_rt {
-	struct efi_tblhdr rt_hdr;
-	efi_status	(*rt_gettime)(struct efi_tm *, struct efi_tmcap *)
-	    EFIABI_ATTR;
-	efi_status	(*rt_settime)(struct efi_tm *) EFIABI_ATTR;
-	efi_status	(*rt_getwaketime)(uint8_t *, uint8_t *,
-	    struct efi_tm *) EFIABI_ATTR;
-	efi_status	(*rt_setwaketime)(uint8_t, struct efi_tm *)
-	    EFIABI_ATTR;
-	efi_status	(*rt_setvirtual)(u_long, u_long, uint32_t,
-	    struct efi_md *) EFIABI_ATTR;
-	efi_status	(*rt_cvtptr)(u_long, void **) EFIABI_ATTR;
-	efi_status	(*rt_getvar)(efi_char *, struct uuid *, uint32_t *,
-	    u_long *, void *) EFIABI_ATTR;
-	efi_status	(*rt_scanvar)(u_long *, efi_char *, struct uuid *)
-	    EFIABI_ATTR;
-	efi_status	(*rt_setvar)(efi_char *, struct uuid *, uint32_t,
-	    u_long, void *) EFIABI_ATTR;
-	efi_status	(*rt_gethicnt)(uint32_t *) EFIABI_ATTR;
-	efi_status	(*rt_reset)(enum efi_reset, efi_status, u_long,
-	    efi_char *) EFIABI_ATTR;
-};
-
-struct efi_systbl {
-	struct efi_tblhdr st_hdr;
-#define	EFI_SYSTBL_SIG	0x5453595320494249UL
-	efi_char	*st_fwvendor;
-	uint32_t	st_fwrev;
-	uint32_t	__pad;
-	void		*st_cin;
-	void		*st_cinif;
-	void		*st_cout;
-	void		*st_coutif;
-	void		*st_cerr;
-	void		*st_cerrif;
-	uint64_t	st_rt;
-	void		*st_bs;
-	u_long		st_entries;
-	uint64_t	st_cfgtbl;
 };
 
 #ifdef _KERNEL

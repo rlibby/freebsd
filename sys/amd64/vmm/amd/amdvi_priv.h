@@ -63,42 +63,42 @@
  * NOTE: Must be 256-bits/32 bytes aligned.
  */
 struct amdvi_dte {
-	uint32_t dt_valid:1;		/* Device Table valid. */
-	uint32_t pt_valid:1;		/* Page translation valid. */
-	uint8_t  :7;			/* Reserved[8:2] */
-	uint8_t	 pt_level:3;		/* Paging level, 0 to disable. */
+	uint64_t dt_valid:1;		/* Device Table valid. */
+	uint64_t pt_valid:1;		/* Page translation valid. */
+	uint64_t :7;			/* Reserved[8:2] */
+	uint64_t pt_level:3;		/* Paging level, 0 to disable. */
 	uint64_t pt_base:40;		/* Page table root pointer. */
-	uint8_t  :3;			/* Reserved[54:52] */
-	uint8_t	 gv_valid:1;		/* Revision 2, GVA to SPA. */
-	uint8_t	 gv_level:2;		/* Revision 2, GLX level. */
-	uint8_t	 gv_cr3_lsb:3;		/* Revision 2, GCR3[14:12] */
-	uint8_t	 read_allow:1;		/* I/O read enabled. */
-	uint8_t	 write_allow:1;		/* I/O write enabled. */
-	uint8_t  :1;			/* Reserved[63] */
-	uint16_t domain_id:16;		/* Domain ID */
-	uint16_t gv_cr3_lsb2:16;	/* Revision 2, GCR3[30:15] */
-	uint8_t	 iotlb_enable:1;	/* Device support IOTLB */
-	uint8_t	 sup_second_io_fault:1;	/* Suppress subsequent I/O faults. */
-	uint8_t	 sup_all_io_fault:1;	/* Suppress all I/O page faults. */
-	uint8_t	 IOctl:2;		/* Port I/O control. */
-	uint8_t	 iotlb_cache_disable:1;	/* IOTLB cache hints. */
-	uint8_t	 snoop_disable:1;	/* Snoop disable. */
-	uint8_t	 allow_ex:1;		/* Allow exclusion. */
-	uint8_t	 sysmgmt:2;		/* System management message.*/
-	uint8_t  :1;			/* Reserved[106] */
-	uint32_t gv_cr3_msb:21;		/* Revision 2, GCR3[51:31] */
-	uint8_t	 intmap_valid:1;	/* Interrupt map valid. */
-	uint8_t	 intmap_len:4;		/* Interrupt map table length. */
-	uint8_t	 intmap_ign:1;		/* Ignore unmapped interrupts. */
+	uint64_t :3;			/* Reserved[54:52] */
+	uint64_t gv_valid:1;		/* Revision 2, GVA to SPA. */
+	uint64_t gv_level:2;		/* Revision 2, GLX level. */
+	uint64_t gv_cr3_lsb:3;		/* Revision 2, GCR3[14:12] */
+	uint64_t read_allow:1;		/* I/O read enabled. */
+	uint64_t write_allow:1;		/* I/O write enabled. */
+	uint64_t :1;			/* Reserved[63] */
+	uint64_t domain_id:16;		/* Domain ID */
+	uint64_t gv_cr3_lsb2:16;	/* Revision 2, GCR3[30:15] */
+	uint64_t iotlb_enable:1;	/* Device support IOTLB */
+	uint64_t sup_second_io_fault:1;	/* Suppress subsequent I/O faults. */
+	uint64_t sup_all_io_fault:1;	/* Suppress all I/O page faults. */
+	uint64_t IOctl:2;		/* Port I/O control. */
+	uint64_t iotlb_cache_disable:1;	/* IOTLB cache hints. */
+	uint64_t snoop_disable:1;	/* Snoop disable. */
+	uint64_t allow_ex:1;		/* Allow exclusion. */
+	uint64_t sysmgmt:2;		/* System management message.*/
+	uint64_t :1;			/* Reserved[106] */
+	uint64_t gv_cr3_msb:21;		/* Revision 2, GCR3[51:31] */
+	uint64_t intmap_valid:1;	/* Interrupt map valid. */
+	uint64_t intmap_len:4;		/* Interrupt map table length. */
+	uint64_t intmap_ign:1;		/* Ignore unmapped interrupts. */
 	uint64_t intmap_base:46;	/* IntMap base. */
-	uint8_t  :4;			/* Reserved[183:180] */
-	uint8_t	 init_pass:1;		/* INIT pass through or PT */
-	uint8_t	 extintr_pass:1;	/* External Interrupt PT */
-	uint8_t	 nmi_pass:1;		/* NMI PT */
-	uint8_t  :1;			/* Reserved[187] */
-	uint8_t	 intr_ctrl:2;		/* Interrupt control */
-	uint8_t	 lint0_pass:1;		/* LINT0 PT */
-	uint8_t	 lint1_pass:1;		/* LINT1 PT */
+	uint64_t :4;			/* Reserved[183:180] */
+	uint64_t init_pass:1;		/* INIT pass through or PT */
+	uint64_t extintr_pass:1;	/* External Interrupt PT */
+	uint64_t nmi_pass:1;		/* NMI PT */
+	uint64_t :1;			/* Reserved[187] */
+	uint64_t intr_ctrl:2;		/* Interrupt control */
+	uint64_t lint0_pass:1;		/* LINT0 PT */
+	uint64_t lint1_pass:1;		/* LINT1 PT */
 	uint64_t :64;			/* Reserved[255:192] */
 } __attribute__((__packed__));
 CTASSERT(sizeof(struct amdvi_dte) == 32);

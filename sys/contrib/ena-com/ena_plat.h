@@ -144,7 +144,6 @@ extern struct ena_bus_space ebs;
 		int __ret_warn_on = !!(condition);			\
 		if (unlikely(__ret_warn_on))				\
 			printf("%s %s", __FUNCTION__, __FILE__);	\
-		unlikely(__ret_warn_on);				\
 	} while (0)
 
 #define ENA_ASSERT(cond, format, arg...)				\

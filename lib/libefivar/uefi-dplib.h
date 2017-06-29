@@ -527,13 +527,18 @@ UefiDevicePathLibConvertTextToDevicePath (
 #define StrnCmp(a, b, n) strncmp(a, b, n)
 #define StrnLenS(str, max) strlen(str)
 #define Strtoi(x) strtol(x, NULL, 0)
-#define Strtoi64(x, y) *(long long *)y = strtoll(x, NULL, 0)
 #define SwapBytes64(u64) bswap64(u64)
 #define UnicodeStrToAsciiStrS(src, dest, len) strlcpy(dest, src, len)
 #define ZeroMem(p,l) memset(p, 0, l)
 
 #undef ASSERT
 #define ASSERT(x)
+
+static inline void
+Strtoi64(const char *str, INT64 *y)
+{
+	*y = strtoll(str, NULL, 0);
+}
 
 /*
  * Define AllocateCopyPool and others so that we "forget" about the

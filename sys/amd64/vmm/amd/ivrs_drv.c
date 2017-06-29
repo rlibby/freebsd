@@ -98,7 +98,8 @@ ivrs_hdr_iterate_tbl(ivhd_iter_t iter, void *arg)
 
 		ivrs_hdr = (ACPI_IVRS_HEADER *)((uint8_t *)ivrs_hdr +
 			ivrs_hdr->Length);
-		if (ivrs_hdr->Length < 0) {
+		if ((ACPI_IVRS_HEADER *)((uint8_t *)ivrs_hdr +
+		    ivrs_hdr->Length) > end) {
 			printf("AMD-Vi:IVHD/IVMD is corrupted, length : %d\n", ivrs_hdr->Length);
 			break;
 		}

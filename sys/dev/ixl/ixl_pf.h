@@ -168,7 +168,7 @@ struct ixl_pf {
 "\nExecutes a \"Get Link Status\" command on the Admin Queue, and displays" \
 " the response."			\
 
-static char *ixl_fc_string[6] = {
+static const char * const ixl_fc_string[6] = {
 	"None",
 	"Rx",
 	"Tx",
@@ -299,8 +299,8 @@ int	ixl_rebuild_hw_structs_after_reset(struct ixl_pf *);
 void	ixl_set_queue_rx_itr(struct ixl_queue *);
 void	ixl_set_queue_tx_itr(struct ixl_queue *);
 
-void	ixl_add_filter(struct ixl_vsi *, u8 *, s16 vlan);
-void	ixl_del_filter(struct ixl_vsi *, u8 *, s16 vlan);
+void	ixl_add_filter(struct ixl_vsi *, const u8 *, s16 vlan);
+void	ixl_del_filter(struct ixl_vsi *, const u8 *, s16 vlan);
 void	ixl_reconfigure_filters(struct ixl_vsi *vsi);
 
 int	ixl_disable_rings(struct ixl_vsi *);
@@ -331,7 +331,7 @@ void	ixl_init_filters(struct ixl_vsi *);
 void	ixl_add_hw_filters(struct ixl_vsi *, int, int);
 void	ixl_del_hw_filters(struct ixl_vsi *, int);
 struct ixl_mac_filter *
-		ixl_find_filter(struct ixl_vsi *, u8 *, s16);
+		ixl_find_filter(const struct ixl_vsi *, const u8 *, s16);
 void	ixl_add_mc_filter(struct ixl_vsi *, u8 *);
 void	ixl_free_mac_filters(struct ixl_vsi *vsi);
 void	ixl_update_vsi_stats(struct ixl_vsi *);
