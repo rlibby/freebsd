@@ -33,8 +33,6 @@
 #ifndef _UTIL_HH_
 #define _UTIL_HH_
 
-#include <cstdint>
-#include <string>
 #include <vector>
 
 // If we aren't using C++11, then just ignore static asserts.

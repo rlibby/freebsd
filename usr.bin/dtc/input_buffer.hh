@@ -34,7 +34,6 @@
 #define _INPUT_BUFFER_HH_
 #include "util.hh"
 #include <assert.h>
-#include <memory>
 #include <stack>
 #include <string>
 #include <unordered_set>
