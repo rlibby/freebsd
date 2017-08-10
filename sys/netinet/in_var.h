@@ -152,12 +152,12 @@ do { \
 #define INADDR_TO_IFP(addr, ifp) \
 	/* struct in_addr addr; */ \
 	/* struct ifnet *ifp; */ \
-{ \
+do { \
 	struct in_ifaddr *ia; \
 \
 	INADDR_TO_IFADDR(addr, ia); \
 	(ifp) = (ia == NULL) ? NULL : ia->ia_ifp; \
-}
+} while (0)
 
 /*
  * Macro for finding the internet address structure (in_ifaddr) corresponding
