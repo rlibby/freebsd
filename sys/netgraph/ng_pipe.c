@@ -106,7 +106,7 @@ struct node_priv {
 typedef struct node_priv *priv_p;
 
 /* Macro for calculating the virtual time for packet dequeueing in WFQ */
-#define FIFO_VTIME_SORT(plen)						\
+#define	FIFO_VTIME_SORT(plen)	do {					\
 	if (hinfo->cfg.wfq && hinfo->cfg.bandwidth) {			\
 		ngp_f->vtime.tv_usec = now->tv_usec + ((uint64_t) (plen) \
 			+ priv->overhead ) * hinfo->run.fifo_queues *	\
@@ -125,7 +125,7 @@ typedef struct node_priv *priv_p;
 			TAILQ_INSERT_BEFORE(ngp_f1, ngp_f, fifo_le);	\
 	} else								\
 		TAILQ_INSERT_TAIL(&hinfo->fifo_head, ngp_f, fifo_le);	\
-
+} while (0)
 
 static void	parse_cfg(struct ng_pipe_hookcfg *, struct ng_pipe_hookcfg *,
 			struct hookinfo *, priv_p);
@@ -806,7 +806,7 @@ pipe_dequeue(struct hookinfo *hinfo, struct timeval *now) {
 			if (hinfo->cfg.wfq) {
 				TAILQ_REMOVE(&hinfo->fifo_head, ngp_f, fifo_le);
 				FIFO_VTIME_SORT(TAILQ_FIRST(
-				    &ngp_f->packet_head)->m->m_pkthdr.len)
+				    &ngp_f->packet_head)->m->m_pkthdr.len);
 			}
 		} else {
 			TAILQ_REMOVE(&hinfo->fifo_head, ngp_f, fifo_le);
