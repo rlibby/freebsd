@@ -511,8 +511,7 @@ dmar_test_boundary(dmar_gaddr_t start, dmar_gaddr_t size,
 
 extern struct timespec dmar_hw_timeout;
 
-#define	DMAR_WAIT_UNTIL(cond)					\
-{								\
+#define	DMAR_WAIT_UNTIL(cond)	do {				\
 	struct timespec last, curr;				\
 	bool forever;						\
 								\
@@ -537,7 +536,7 @@ extern struct timespec dmar_hw_timeout;
 		}						\
 		cpu_spinwait();					\
 	}							\
-}
+} while (0)
 
 #ifdef INVARIANTS
 #define	TD_PREP_PINNED_ASSERT						\
