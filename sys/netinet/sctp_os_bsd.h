@@ -148,21 +148,17 @@ MALLOC_DECLARE(SCTP_M_MCORE);
 #define SCTP_PRINTF(params...)	printf(params)
 #if defined(SCTP_DEBUG)
 #define SCTPDBG(level, params...)					\
-{									\
-	do {								\
-		if (SCTP_BASE_SYSCTL(sctp_debug_on) & level ) {		\
-			SCTP_PRINTF(params);				\
-		}							\
-	} while (0);							\
-}
+do {									\
+	if (SCTP_BASE_SYSCTL(sctp_debug_on) & level ) {			\
+		SCTP_PRINTF(params);					\
+	}								\
+} while (0);
 #define SCTPDBG_ADDR(level, addr)					\
-{									\
-	do {								\
-		if (SCTP_BASE_SYSCTL(sctp_debug_on) & level ) {		\
-			sctp_print_address(addr);			\
-		}							\
-	} while (0);							\
-}
+do {									\
+	if (SCTP_BASE_SYSCTL(sctp_debug_on) & level ) {			\
+		sctp_print_address(addr);				\
+	}								\
+} while (0);
 #else
 #define SCTPDBG(level, params...)
 #define SCTPDBG_ADDR(level, addr)
@@ -418,7 +414,7 @@ typedef struct rtentry sctp_rtentry_t;
  * IP output routines
  */
 #define SCTP_IP_OUTPUT(result, o_pak, ro, stcb, vrf_id) \
-{ \
+do { \
 	int o_flgs = IP_RAWOUTPUT; \
 	struct sctp_tcb *local_stcb = stcb; \
 	if (local_stcb && \
@@ -427,10 +423,10 @@ typedef struct rtentry sctp_rtentry_t;
 		o_flgs |= local_stcb->sctp_ep->sctp_socket->so_options & SO_DONTROUTE; \
 	m_clrprotoflags(o_pak); \
 	result = ip_output(o_pak, NULL, ro, o_flgs, 0, NULL); \
-}
+} while (0)
 
 #define SCTP_IP6_OUTPUT(result, o_pak, ro, ifp, stcb, vrf_id) \
-{ \
+do { \
 	struct sctp_tcb *local_stcb = stcb; \
 	m_clrprotoflags(o_pak); \
 	if (local_stcb && local_stcb->sctp_ep) \
@@ -439,7 +435,7 @@ typedef struct rtentry sctp_rtentry_t;
 				    (ro), 0, 0, ifp, NULL); \
 	else \
 		result = ip6_output(o_pak, NULL, (ro), 0, 0, ifp, NULL); \
-}
+} while (0)
 
 struct mbuf *
 sctp_get_mbuf_for_msg(unsigned int space_needed,
@@ -465,22 +461,22 @@ sctp_get_mbuf_for_msg(unsigned int space_needed,
 #define SCTP_DECREMENT_AND_CHECK_REFCOUNT(addr) (atomic_fetchadd_int(addr, -1) == 1)
 #if defined(INVARIANTS)
 #define SCTP_SAVE_ATOMIC_DECREMENT(addr, val) \
-{ \
+do { \
 	int32_t oldval; \
 	oldval = atomic_fetchadd_int(addr, -val); \
 	if (oldval < val) { \
 		panic("Counter goes negative"); \
 	} \
-}
+} while (0)
 #else
 #define SCTP_SAVE_ATOMIC_DECREMENT(addr, val) \
-{ \
+do { \
 	int32_t oldval; \
 	oldval = atomic_fetchadd_int(addr, -val); \
 	if (oldval < val) { \
 		*addr = 0; \
 	} \
-}
+} while (0)
 #endif
 
 #define SCTP_IS_LISTENING(inp) ((inp->sctp_flags & SCTP_PCB_FLAGS_ACCEPTING) != 0)
