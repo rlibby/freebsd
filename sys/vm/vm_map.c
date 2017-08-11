@@ -165,14 +165,14 @@ static void vm_map_wire_entry_failure(vm_map_t map, vm_map_entry_t entry,
  *	addresses fall within the valid range of the map.
  */
 #define	VM_MAP_RANGE_CHECK(map, start, end)		\
-		{					\
+		do {					\
 		if (start < vm_map_min(map))		\
 			start = vm_map_min(map);	\
 		if (end > vm_map_max(map))		\
 			end = vm_map_max(map);		\
 		if (start > end)			\
 			start = end;			\
-		}
+		} while (0)
 
 /*
  *	vm_map_startup:
@@ -1674,10 +1674,10 @@ vm_map_simplify_entry(vm_map_t map, vm_map_entry_t entry)
  *	it splits the entry into two.
  */
 #define vm_map_clip_start(map, entry, startaddr) \
-{ \
+do { \
 	if (startaddr > entry->start) \
 		_vm_map_clip_start(map, entry, startaddr); \
-}
+} while (0)
 
 /*
  *	This routine is called only when it is known that
@@ -1761,10 +1761,10 @@ _vm_map_clip_start(vm_map_t map, vm_map_entry_t entry, vm_offset_t start)
  *	it splits the entry into two.
  */
 #define vm_map_clip_end(map, entry, endaddr) \
-{ \
+do { \
 	if ((endaddr) < (entry->end)) \
 		_vm_map_clip_end((map), (entry), (endaddr)); \
-}
+} while (0)
 
 /*
  *	This routine is called only when it is known that
