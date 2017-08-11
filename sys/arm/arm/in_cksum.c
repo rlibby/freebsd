@@ -57,18 +57,16 @@ __FBSDID("$FreeBSD$");
  */
 
 #define ADDCARRY(x)  (x > 65535 ? x -= 65535 : x)
-#define REDUCE32							  \
-    {									  \
+#define	REDUCE32 do {							  \
 	q_util.q = sum;							  \
 	sum = q_util.s[0] + q_util.s[1] + q_util.s[2] + q_util.s[3];	  \
-    }
-#define REDUCE16							  \
-    {									  \
+} while (0)
+#define	REDUCE16 do {							  \
 	q_util.q = sum;							  \
 	l_util.l = q_util.s[0] + q_util.s[1] + q_util.s[2] + q_util.s[3]; \
 	sum = l_util.s[0] + l_util.s[1];				  \
 	ADDCARRY(sum);							  \
-    }
+} while (0)
 
 union l_util {
 	u_int16_t s[2];

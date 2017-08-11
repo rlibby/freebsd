@@ -60,20 +60,21 @@ __FBSDID("$FreeBSD$");
  */
 #if !defined(__GNUCLIKE_ASM) || defined(__INTEL_COMPILER)
 /* non gcc parts stolen from sys/alpha/alpha/in_cksum.c */
-#define REDUCE32							  \
-    {									  \
+#define	REDUCE32 do {							  \
 	q_util.q = sum;							  \
 	sum = q_util.s[0] + q_util.s[1] + q_util.s[2] + q_util.s[3];	  \
-    }
-#define REDUCE16							  \
-    {									  \
+} while (0)
+#define	REDUCE16 do {							  \
 	q_util.q = sum;							  \
 	l_util.l = q_util.s[0] + q_util.s[1] + q_util.s[2] + q_util.s[3]; \
 	sum = l_util.s[0] + l_util.s[1];				  \
 	ADDCARRY(sum);							  \
-    }
+} while (0)
 #endif
-#define REDUCE          {sum = (sum & 0xffff) + (sum >> 16); ADDCARRY(sum);}
+#define	REDUCE do {							  \
+	sum = (sum & 0xffff) + (sum >> 16);				  \
+	ADDCARRY(sum);							  \
+} while (0)
 
 #if !defined(__GNUCLIKE_ASM) || defined(__INTEL_COMPILER)
 static const u_int32_t in_masks[] = {
