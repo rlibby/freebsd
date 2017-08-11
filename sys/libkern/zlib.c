@@ -2196,20 +2196,19 @@ local void init_block(s)
  * Remove the smallest element from the heap and recreate the heap with
  * one less element. Updates heap and heap_len.
  */
-#define pqremove(s, tree, top) \
-{\
-    top = s->heap[SMALLEST]; \
-    s->heap[SMALLEST] = s->heap[s->heap_len--]; \
-    pqdownheap(s, tree, SMALLEST); \
-}
+#define	pqremove(s, tree, top)	do {					\
+	(top) = (s)->heap[SMALLEST];					\
+	(s)->heap[SMALLEST] = (s)->heap[(s)->heap_len--];		\
+	pqdownheap(s, tree, SMALLEST);					\
+} while (0)
 
 /* ===========================================================================
  * Compares to subtrees, using the tree depth as tie breaker when
  * the subtrees have equal frequency. This minimizes the worst case length.
  */
-#define smaller(tree, n, m, depth) \
-   (tree[n].Freq < tree[m].Freq || \
-   (tree[n].Freq == tree[m].Freq && depth[n] <= depth[m]))
+#define	smaller(tree, n, m, depth)					\
+	((tree)[n].Freq < (tree)[m].Freq ||				\
+	 ((tree)[n].Freq == (tree)[m].Freq && (depth)[n] <= (depth)[m]))
 
 /* ===========================================================================
  * Restore the heap property by moving down the tree starting at node k,
