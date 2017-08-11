@@ -545,10 +545,7 @@ bit8 *data; //buffer
 #endif
 
 #ifdef AGTIAPI_LOAD_DELAY
-#define AGTIAPI_INIT_DELAY(delay_time)  \
-    {  \
-      agtiapi_DelayMSec(delay_time);  \
-    }
+#define	AGTIAPI_INIT_DELAY(delay_time)	agtiapi_DelayMSec(delay_time)
 #else
 #define AGTIAPI_INIT_DELAY(delay_time)
 #endif

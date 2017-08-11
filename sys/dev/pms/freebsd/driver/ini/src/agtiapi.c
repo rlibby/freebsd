@@ -106,9 +106,10 @@ atomic_t    outstanding_encrypted_io_count;
 
 #define PMCoffsetof(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
 
-#define CPU_TO_LE32(dst, src)                  \
-    dst.lower = htole32(LOW_32_BITS(src)); \
-    dst.upper = htole32(HIGH_32_BITS(src))
+#define	CPU_TO_LE32(dst, src)	do {					\
+	dst.lower = htole32(LOW_32_BITS(src));				\
+	dst.upper = htole32(HIGH_32_BITS(src));				\
+} while (0)
 
 #define CMND_TO_CHANNEL( ccb )     ( ccb->ccb_h.path_id )
 #define CMND_TO_TARGET(  ccb )     ( ccb->ccb_h.target_id )
@@ -153,43 +154,45 @@ static ag_mapping_t *agMappingList = NULL;  // modified by agtiapi_Setup()
 #define AG_PERF_SPINLOCK_IRQ(lock, flags)
 
 
-#define AG_LOCAL_LOCK(lock)     if (lock) \
-                                         mtx_lock(lock)
-#define AG_LOCAL_UNLOCK(lock)   if (lock) \
-                                         mtx_unlock(lock)
+#define	AG_LOCAL_LOCK(lock)	do {					\
+	if (lock)							\
+		mtx_lock(lock);						\
+} while (0)
+#define	AG_LOCAL_UNLOCK(lock)	do {					\
+	if (lock)							\
+		mtx_unlock(lock);					\
+} while (0)
 #define AG_LOCAL_FLAGS(_flags)         unsigned long _flags = 0
 #endif
 
 
-#define AG_GET_DONE_PCCB(pccb, pmcsc)            \
-  {                                              \
-    AG_LOCAL_LOCK(&pmcsc->doneLock);             \
-    pccb = pmcsc->ccbDoneHead;                   \
-    if (pccb != NULL)                            \
-    {                                            \
-      pmcsc->ccbDoneHead = NULL;                 \
-      pmcsc->ccbDoneTail = NULL;                 \
-      AG_LOCAL_UNLOCK(&pmcsc->doneLock);         \
-      agtiapi_Done(pmcsc, pccb);                 \
-    }                                            \
-    else                                         \
-      AG_LOCAL_UNLOCK(&pmcsc->doneLock);         \
-  }
+#define AG_GET_DONE_PCCB(pccb, pmcsc)	do {				\
+    AG_LOCAL_LOCK(&pmcsc->doneLock);					\
+    pccb = pmcsc->ccbDoneHead;						\
+    if (pccb != NULL)							\
+    {									\
+      pmcsc->ccbDoneHead = NULL;					\
+      pmcsc->ccbDoneTail = NULL;					\
+      AG_LOCAL_UNLOCK(&pmcsc->doneLock);				\
+      agtiapi_Done(pmcsc, pccb);					\
+    }									\
+    else								\
+      AG_LOCAL_UNLOCK(&pmcsc->doneLock);				\
+} while (0)
 
-#define AG_GET_DONE_SMP_PCCB(pccb, pmcsc)	\
-  {                                              \
-    AG_LOCAL_LOCK(&pmcsc->doneSMPLock);          \
-    pccb = pmcsc->smpDoneHead;                   \
-    if (pccb != NULL)                            \
-    {                                            \
-      pmcsc->smpDoneHead = NULL;                 \
-      pmcsc->smpDoneTail = NULL;                 \
-      AG_LOCAL_UNLOCK(&pmcsc->doneSMPLock);      \
-      agtiapi_SMPDone(pmcsc, pccb);              \
-    }                                            \
-    else                                         \
-      AG_LOCAL_UNLOCK(&pmcsc->doneSMPLock);      \
-  }
+#define AG_GET_DONE_SMP_PCCB(pccb, pmcsc)	do {			\
+    AG_LOCAL_LOCK(&pmcsc->doneSMPLock);					\
+    pccb = pmcsc->smpDoneHead;						\
+    if (pccb != NULL)							\
+    {									\
+      pmcsc->smpDoneHead = NULL;					\
+      pmcsc->smpDoneTail = NULL;					\
+      AG_LOCAL_UNLOCK(&pmcsc->doneSMPLock);				\
+      agtiapi_SMPDone(pmcsc, pccb);					\
+    }									\
+    else								\
+      AG_LOCAL_UNLOCK(&pmcsc->doneSMPLock);				\
+} while (0)
 
 #ifdef AGTIAPI_DUMP_IO_DEBUG
 #define AG_IO_DUMPCCB(pccb)    agtiapi_DumpCCB(pccb)
