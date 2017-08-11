@@ -69,21 +69,19 @@ static int		handleevents(sbintime_t now, int fake);
 
 static struct mtx	et_hw_mtx;
 
-#define	ET_HW_LOCK(state)						\
-	{								\
-		if (timer->et_flags & ET_FLAGS_PERCPU)			\
-			mtx_lock_spin(&(state)->et_hw_mtx);		\
-		else							\
-			mtx_lock_spin(&et_hw_mtx);			\
-	}
+#define	ET_HW_LOCK(state)	do {					\
+	if (timer->et_flags & ET_FLAGS_PERCPU)				\
+		mtx_lock_spin(&(state)->et_hw_mtx);			\
+	else								\
+		mtx_lock_spin(&et_hw_mtx);				\
+} while (0)
 
-#define	ET_HW_UNLOCK(state)						\
-	{								\
-		if (timer->et_flags & ET_FLAGS_PERCPU)			\
-			mtx_unlock_spin(&(state)->et_hw_mtx);		\
-		else							\
-			mtx_unlock_spin(&et_hw_mtx);			\
-	}
+#define	ET_HW_UNLOCK(state)	do {					\
+	if (timer->et_flags & ET_FLAGS_PERCPU)				\
+		mtx_unlock_spin(&(state)->et_hw_mtx);			\
+	else								\
+		mtx_unlock_spin(&et_hw_mtx);				\
+} while (0)
 
 static struct eventtimer *timer = NULL;
 static sbintime_t	timerperiod;	/* Timer period for periodic mode. */
