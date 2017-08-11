@@ -48,20 +48,20 @@ extern struct pr_usrreqs sctp_usrreqs;
 #define sctp_is_feature_on(inp, feature) ((inp->sctp_features & feature) == feature)
 #define sctp_is_feature_off(inp, feature) ((inp->sctp_features & feature) == 0)
 
-#define sctp_stcb_feature_on(inp, stcb, feature) {\
+#define sctp_stcb_feature_on(inp, stcb, feature) do {\
 	if (stcb) { \
 		stcb->asoc.sctp_features |= feature; \
 	} else if (inp) { \
 		inp->sctp_features |= feature; \
 	} \
-}
-#define sctp_stcb_feature_off(inp, stcb, feature) {\
+} while (0)
+#define sctp_stcb_feature_off(inp, stcb, feature) do {\
 	if (stcb) { \
 		stcb->asoc.sctp_features &= ~feature; \
 	} else if (inp) { \
 		inp->sctp_features &= ~feature; \
 	} \
-}
+} while (0)
 #define sctp_stcb_is_feature_on(inp, stcb, feature) \
 	(((stcb != NULL) && \
 	  ((stcb->asoc.sctp_features & feature) == feature)) || \
@@ -98,45 +98,45 @@ extern struct pr_usrreqs sctp_usrreqs;
  * right now :-D
  */
 #ifdef INVARIANTS
-#define sctp_free_a_readq(_stcb, _readq) { \
+#define sctp_free_a_readq(_stcb, _readq) do { \
 	if ((_readq)->on_strm_q) \
 		panic("On strm q stcb:%p readq:%p", (_stcb), (_readq)); \
 	SCTP_ZONE_FREE(SCTP_BASE_INFO(ipi_zone_readq), (_readq)); \
 	SCTP_DECR_READQ_COUNT(); \
-}
+} while (0)
 #else
-#define sctp_free_a_readq(_stcb, _readq) { \
+#define sctp_free_a_readq(_stcb, _readq) do { \
 	SCTP_ZONE_FREE(SCTP_BASE_INFO(ipi_zone_readq), (_readq)); \
 	SCTP_DECR_READQ_COUNT(); \
-}
+} while (0)
 #endif
 
-#define sctp_alloc_a_readq(_stcb, _readq) { \
+#define sctp_alloc_a_readq(_stcb, _readq) do { \
 	(_readq) = SCTP_ZONE_GET(SCTP_BASE_INFO(ipi_zone_readq), struct sctp_queued_to_read); \
 	if ((_readq)) { \
 	     SCTP_INCR_READQ_COUNT(); \
 	} \
-}
+} while (0)
 
-#define sctp_free_a_strmoq(_stcb, _strmoq, _so_locked) { \
+#define sctp_free_a_strmoq(_stcb, _strmoq, _so_locked) do { \
 	if ((_strmoq)->holds_key_ref) { \
 		sctp_auth_key_release(stcb, sp->auth_keyid, _so_locked); \
 		(_strmoq)->holds_key_ref = 0; \
 	} \
 	SCTP_ZONE_FREE(SCTP_BASE_INFO(ipi_zone_strmoq), (_strmoq)); \
 	SCTP_DECR_STRMOQ_COUNT(); \
-}
+} while (0)
 
-#define sctp_alloc_a_strmoq(_stcb, _strmoq) { \
+#define sctp_alloc_a_strmoq(_stcb, _strmoq) do { \
 	(_strmoq) = SCTP_ZONE_GET(SCTP_BASE_INFO(ipi_zone_strmoq), struct sctp_stream_queue_pending); \
 	if ((_strmoq)) { \
 		memset(_strmoq, 0, sizeof(struct sctp_stream_queue_pending)); \
 		SCTP_INCR_STRMOQ_COUNT(); \
 		(_strmoq)->holds_key_ref = 0; \
 	} \
-}
+} while (0)
 
-#define sctp_free_a_chunk(_stcb, _chk, _so_locked) { \
+#define sctp_free_a_chunk(_stcb, _chk, _so_locked) do { \
 	if ((_chk)->holds_key_ref) {\
 		sctp_auth_key_release((_stcb), (_chk)->auth_keyid, _so_locked); \
 		(_chk)->holds_key_ref = 0; \
@@ -160,9 +160,9 @@ extern struct pr_usrreqs sctp_usrreqs;
 		SCTP_ZONE_FREE(SCTP_BASE_INFO(ipi_zone_chunk), (_chk)); \
 		SCTP_DECR_CHK_COUNT(); \
 	} \
-}
+} while (0)
 
-#define sctp_alloc_a_chunk(_stcb, _chk) { \
+#define sctp_alloc_a_chunk(_stcb, _chk) do { \
 	if (TAILQ_EMPTY(&(_stcb)->asoc.free_chunks)) { \
 		(_chk) = SCTP_ZONE_GET(SCTP_BASE_INFO(ipi_zone_chunk), struct sctp_tmit_chunk); \
 		if ((_chk)) { \
@@ -178,10 +178,10 @@ extern struct pr_usrreqs sctp_usrreqs;
 		SCTP_STAT_INCR(sctps_cached_chk); \
 		(_stcb)->asoc.free_chunk_cnt--; \
 	} \
-}
+} while (0)
 
 
-#define sctp_free_remote_addr(__net) { \
+#define sctp_free_remote_addr(__net) do { \
 	if ((__net)) {  \
 		if (SCTP_DECREMENT_AND_CHECK_REFCOUNT(&(__net)->ref_count)) { \
 			(void)SCTP_OS_TIMER_STOP(&(__net)->rxt_timer.timer); \
@@ -201,9 +201,9 @@ extern struct pr_usrreqs sctp_usrreqs;
 			SCTP_DECR_RADDR_COUNT(); \
 		} \
 	} \
-}
+} while (0)
 
-#define sctp_sbfree(ctl, stcb, sb, m) { \
+#define sctp_sbfree(ctl, stcb, sb, m) do { \
 	SCTP_SAVE_ATOMIC_DECREMENT(&(sb)->sb_cc, SCTP_BUF_LEN((m))); \
 	SCTP_SAVE_ATOMIC_DECREMENT(&(sb)->sb_mbcnt, MSIZE); \
 	if (((ctl)->do_not_ref_stcb == 0) && stcb) {\
@@ -213,9 +213,9 @@ extern struct pr_usrreqs sctp_usrreqs;
 	if (SCTP_BUF_TYPE(m) != MT_DATA && SCTP_BUF_TYPE(m) != MT_HEADER && \
 	    SCTP_BUF_TYPE(m) != MT_OOBDATA) \
 		atomic_subtract_int(&(sb)->sb_ctl,SCTP_BUF_LEN((m))); \
-}
+} while (0)
 
-#define sctp_sballoc(stcb, sb, m) { \
+#define sctp_sballoc(stcb, sb, m) do { \
 	atomic_add_int(&(sb)->sb_cc,SCTP_BUF_LEN((m))); \
 	atomic_add_int(&(sb)->sb_mbcnt, MSIZE); \
 	if (stcb) { \
@@ -225,20 +225,20 @@ extern struct pr_usrreqs sctp_usrreqs;
 	if (SCTP_BUF_TYPE(m) != MT_DATA && SCTP_BUF_TYPE(m) != MT_HEADER && \
 	    SCTP_BUF_TYPE(m) != MT_OOBDATA) \
 		atomic_add_int(&(sb)->sb_ctl,SCTP_BUF_LEN((m))); \
-}
+} while (0)
 
 
-#define sctp_ucount_incr(val) { \
+#define sctp_ucount_incr(val) do { \
 	val++; \
-}
+} while (0)
 
-#define sctp_ucount_decr(val) { \
+#define sctp_ucount_decr(val) do { \
 	if (val > 0) { \
 		val--; \
 	} else { \
 		val = 0; \
 	} \
-}
+} while (0)
 
 #define sctp_mbuf_crush(data) do { \
 	struct mbuf *_m; \
