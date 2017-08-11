@@ -2196,12 +2196,11 @@ local void init_block(s)
  * Remove the smallest element from the heap and recreate the heap with
  * one less element. Updates heap and heap_len.
  */
-#define pqremove(s, tree, top) \
-{\
+#define pqremove(s, tree, top) do { \
     top = s->heap[SMALLEST]; \
     s->heap[SMALLEST] = s->heap[s->heap_len--]; \
     pqdownheap(s, tree, SMALLEST); \
-}
+} while (0)
 
 /* ===========================================================================
  * Compares to subtrees, using the tree depth as tie breaker when
