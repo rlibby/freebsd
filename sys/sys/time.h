@@ -505,11 +505,10 @@ int	tvtohz(struct timeval *tv);
 
 #define	SBT2FREQ(sbt)	((SBT_1S + ((sbt) >> 1)) / (sbt))
 
-#define	FREQ2BT(freq, bt)                                               \
-{									\
-	(bt)->sec = 0;                                                  \
-	(bt)->frac = ((uint64_t)0x8000000000000000  / (freq)) << 1;     \
-}
+#define	FREQ2BT(freq, bt)	do {					\
+	(bt)->sec = 0;							\
+	(bt)->frac = ((uint64_t)0x8000000000000000  / (freq)) << 1;	\
+} while (0)
 
 #define	TIMESEL(sbt, sbt2)						\
 	(((sbt2) >= sbt_timethreshold) ?				\
