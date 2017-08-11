@@ -2197,11 +2197,11 @@ local void init_block(s)
  * one less element. Updates heap and heap_len.
  */
 #define pqremove(s, tree, top) \
-{\
+do {\
     top = s->heap[SMALLEST]; \
     s->heap[SMALLEST] = s->heap[s->heap_len--]; \
     pqdownheap(s, tree, SMALLEST); \
-}
+} while (0)
 
 /* ===========================================================================
  * Compares to subtrees, using the tree depth as tie breaker when
