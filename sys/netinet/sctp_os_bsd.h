@@ -147,42 +147,47 @@ MALLOC_DECLARE(SCTP_M_MCORE);
 
 #define SCTP_PRINTF(params...)	printf(params)
 #if defined(SCTP_DEBUG)
-#define SCTPDBG(level, params...)					\
-{									\
-	do {								\
-		if (SCTP_BASE_SYSCTL(sctp_debug_on) & level ) {		\
-			SCTP_PRINTF(params);				\
-		}							\
-	} while (0);							\
-}
-#define SCTPDBG_ADDR(level, addr)					\
-{									\
-	do {								\
-		if (SCTP_BASE_SYSCTL(sctp_debug_on) & level ) {		\
-			sctp_print_address(addr);			\
-		}							\
-	} while (0);							\
-}
+#define	SCTPDBG(level, params...)	do {				\
+	if (SCTP_BASE_SYSCTL(sctp_debug_on) & level ) {			\
+		SCTP_PRINTF(params);					\
+	}								\
+} while (0)
+#define	SCTPDBG_ADDR(level, addr)	do {				\
+	if (SCTP_BASE_SYSCTL(sctp_debug_on) & level ) {			\
+		sctp_print_address(addr);				\
+	}								\
+} while (0)
 #else
 #define SCTPDBG(level, params...)
 #define SCTPDBG_ADDR(level, addr)
 #endif
 
 #ifdef SCTP_LTRACE_CHUNKS
-#define SCTP_LTRACE_CHK(a, b, c, d) if(SCTP_BASE_SYSCTL(sctp_logging_level) & SCTP_LTRACE_CHUNK_ENABLE) SCTP_CTR6(KTR_SUBSYS, "SCTP:%d[%d]:%x-%x-%x-%x", SCTP_LOG_CHUNK_PROC, 0, a, b, c, d)
+#define	SCTP_LTRACE_CHK(a, b, c, d)	do {				\
+	if (SCTP_BASE_SYSCTL(sctp_logging_level) &			\
+	    SCTP_LTRACE_CHUNK_ENABLE)					\
+		SCTP_CTR6(KTR_SUBSYS, "SCTP:%d[%d]:%x-%x-%x-%x",	\
+		    SCTP_LOG_CHUNK_PROC, 0, (a), (b), (c), (d));	\
+} while (0)
 #else
 #define SCTP_LTRACE_CHK(a, b, c, d)
 #endif
 
 #ifdef SCTP_LTRACE_ERRORS
-#define SCTP_LTRACE_ERR_RET_PKT(m, inp, stcb, net, file, err) \
-	if (SCTP_BASE_SYSCTL(sctp_logging_level) & SCTP_LTRACE_ERROR_ENABLE) \
+#define	SCTP_LTRACE_ERR_RET_PKT(m, inp, stcb, net, file, err)	do {	\
+	if (SCTP_BASE_SYSCTL(sctp_logging_level) &			\
+	    SCTP_LTRACE_ERROR_ENABLE)					\
 		SCTP_PRINTF("mbuf:%p inp:%p stcb:%p net:%p file:%x line:%d error:%d\n", \
-		            m, inp, stcb, net, file, __LINE__, err);
-#define SCTP_LTRACE_ERR_RET(inp, stcb, net, file, err) \
-	if (SCTP_BASE_SYSCTL(sctp_logging_level) & SCTP_LTRACE_ERROR_ENABLE) \
+		            (m), (inp), (stcb), (net), (file),		\
+			    __LINE__, (err));				\
+} while (0)
+#define	SCTP_LTRACE_ERR_RET(inp, stcb, net, file, err)	do {		\
+	if (SCTP_BASE_SYSCTL(sctp_logging_level) &			\
+	    SCTP_LTRACE_ERROR_ENABLE)					\
 		SCTP_PRINTF("inp:%p stcb:%p net:%p file:%x line:%d error:%d\n", \
-		            inp, stcb, net, file, __LINE__, err);
+		            (inp), (stcb), (net), (file), __LINE__,	\
+			    (err));					\
+} while (0)
 #else
 #define SCTP_LTRACE_ERR_RET_PKT(m, inp, stcb, net, file, err)
 #define SCTP_LTRACE_ERR_RET(inp, stcb, net, file, err)
@@ -207,8 +212,8 @@ MALLOC_DECLARE(SCTP_M_MCORE);
  * Access to IFN's to help with src-addr-selection
  */
 /* This could return VOID if the index works but for BSD we provide both. */
-#define SCTP_GET_IFN_VOID_FROM_ROUTE(ro) (void *)ro->ro_rt->rt_ifp
-#define SCTP_GET_IF_INDEX_FROM_ROUTE(ro) (ro)->ro_rt->rt_ifp->if_index
+#define	SCTP_GET_IFN_VOID_FROM_ROUTE(ro)	((void *)(ro)->ro_rt->rt_ifp)
+#define	SCTP_GET_IF_INDEX_FROM_ROUTE(ro)	((ro)->ro_rt->rt_ifp->if_index)
 #define SCTP_ROUTE_HAS_VALID_IFN(ro) ((ro)->ro_rt && (ro)->ro_rt->rt_ifp)
 
 /*
@@ -237,21 +242,21 @@ MALLOC_DECLARE(SCTP_M_MCORE);
 
 /* SCTP_ZONE_INIT: initialize the zone */
 typedef struct uma_zone *sctp_zone_t;
-#define SCTP_ZONE_INIT(zone, name, size, number) { \
-	zone = uma_zcreate(name, size, NULL, NULL, NULL, NULL, UMA_ALIGN_PTR,\
-		0); \
-	uma_zone_set_max(zone, number); \
-}
+#define	SCTP_ZONE_INIT(zone, name, size, number)	do {		\
+	(zone) = uma_zcreate((name), (size), NULL, NULL, NULL, NULL,	\
+	    UMA_ALIGN_PTR, 0);						\
+	uma_zone_set_max((zone), (number));				\
+} while (0)
 
 #define SCTP_ZONE_DESTROY(zone) uma_zdestroy(zone)
 
 /* SCTP_ZONE_GET: allocate element from the zone */
-#define SCTP_ZONE_GET(zone, type) \
-	(type *)uma_zalloc(zone, M_NOWAIT);
+#define	SCTP_ZONE_GET(zone, type) \
+	((type *)uma_zalloc((zone), M_NOWAIT))
 
 /* SCTP_ZONE_FREE: free element from the zone */
 #define SCTP_ZONE_FREE(zone, element) \
-	uma_zfree(zone, element);
+	uma_zfree((zone), (element))
 
 #define SCTP_HASH_INIT(size, hashmark) hashinit_flags(size, M_PCB, hashmark, HASH_NOWAIT)
 #define SCTP_HASH_FREE(table, hashmark) hashdestroy(table, M_PCB, hashmark)
@@ -281,18 +286,18 @@ typedef struct callout sctp_os_timer_t;
  * Functions
  */
 /* Mbuf manipulation and access macros  */
-#define SCTP_BUF_LEN(m) (m->m_len)
-#define SCTP_BUF_NEXT(m) (m->m_next)
-#define SCTP_BUF_NEXT_PKT(m) (m->m_nextpkt)
-#define SCTP_BUF_RESV_UF(m, size) m->m_data += size
-#define SCTP_BUF_AT(m, size) m->m_data + size
-#define SCTP_BUF_IS_EXTENDED(m) (m->m_flags & M_EXT)
-#define SCTP_BUF_SIZE M_SIZE
-#define SCTP_BUF_TYPE(m) (m->m_type)
-#define SCTP_BUF_RECVIF(m) (m->m_pkthdr.rcvif)
-#define SCTP_BUF_PREPEND	M_PREPEND
+#define	SCTP_BUF_LEN(m)	((m)->m_len)
+#define	SCTP_BUF_NEXT(m)	((m)->m_next)
+#define	SCTP_BUF_NEXT_PKT(m)	((m)->m_nextpkt)
+#define	SCTP_BUF_RESV_UF(m, size)	((m)->m_data += (size))
+#define	SCTP_BUF_AT(m, size)	((m)->m_data + (size))
+#define	SCTP_BUF_IS_EXTENDED(m)	((m)->m_flags & M_EXT)
+#define	SCTP_BUF_SIZE M_SIZE
+#define	SCTP_BUF_TYPE(m)	((m)->m_type)
+#define	SCTP_BUF_RECVIF(m)	((m)->m_pkthdr.rcvif)
+#define	SCTP_BUF_PREPEND	M_PREPEND
 
-#define SCTP_ALIGN_TO_END(m, len) M_ALIGN(m, len)
+#define	SCTP_ALIGN_TO_END(m, len)	M_ALIGN((m), (len))
 
 /* We make it so if you have up to 4 threads
  * writing based on the default size of
@@ -305,13 +310,17 @@ typedef struct callout sctp_os_timer_t;
 /*************************/
 /*      MTU              */
 /*************************/
-#define SCTP_GATHER_MTU_FROM_IFN_INFO(ifn, ifn_index, af) ((struct ifnet *)ifn)->if_mtu
-#define SCTP_GATHER_MTU_FROM_ROUTE(sctp_ifa, sa, rt) ((uint32_t)((rt != NULL) ? rt->rt_mtu : 0))
-#define SCTP_GATHER_MTU_FROM_INTFC(sctp_ifn) ((sctp_ifn->ifn_p != NULL) ? ((struct ifnet *)(sctp_ifn->ifn_p))->if_mtu : 0)
-#define SCTP_SET_MTU_OF_ROUTE(sa, rt, mtu) do { \
-                                              if (rt != NULL) \
-                                                 rt->rt_mtu = mtu; \
-                                           } while(0)
+#define	SCTP_GATHER_MTU_FROM_IFN_INFO(ifn, ifn_index, af)		\
+	(((struct ifnet *)(ifn))->if_mtu)
+#define	SCTP_GATHER_MTU_FROM_ROUTE(sctp_ifa, sa, rt)			\
+	((uint32_t)(((rt) != NULL) ? (rt)->rt_mtu : 0))
+#define	SCTP_GATHER_MTU_FROM_INTFC(sctp_ifn)				\
+	(((sctp_ifn)->ifn_p != NULL) ?					\
+	    ((struct ifnet *)((sctp_ifn)->ifn_p))->if_mtu : 0)
+#define	SCTP_SET_MTU_OF_ROUTE(sa, rt, mtu)	do {			\
+	if ((rt) != NULL)						\
+		(rt)->rt_mtu = (mtu);					\
+} while(0)
 
 /* (de-)register interface event notifications */
 #define SCTP_REGISTER_INTERFACE(ifhandle, af)
@@ -322,13 +331,13 @@ typedef struct callout sctp_os_timer_t;
 /* These are for logging */
 /*************************/
 /* return the base ext data pointer */
-#define SCTP_BUF_EXTEND_BASE(m) (m->m_ext.ext_buf)
+#define	SCTP_BUF_EXTEND_BASE(m)	((m)->m_ext.ext_buf)
  /* return the refcnt of the data pointer */
-#define SCTP_BUF_EXTEND_REFCNT(m) (*m->m_ext.ext_cnt)
+#define	SCTP_BUF_EXTEND_REFCNT(m)	(*(m)->m_ext.ext_cnt)
 /* return any buffer related flags, this is
  * used beyond logging for apple only.
  */
-#define SCTP_BUF_GET_FLAGS(m) (m->m_flags)
+#define	SCTP_BUF_GET_FLAGS(m)	((m)->m_flags)
 
 /* For BSD this just accesses the M_PKTHDR length
  * so it operates on an mbuf with hdr flag. Other
@@ -341,20 +350,21 @@ typedef struct callout sctp_os_timer_t;
 #define SCTP_GET_HEADER_FOR_OUTPUT(o_pak) 0
 #define SCTP_RELEASE_HEADER(m)
 #define SCTP_RELEASE_PKT(m)	sctp_m_freem(m)
-#define SCTP_ENABLE_UDP_CSUM(m) do { \
-					m->m_pkthdr.csum_flags = CSUM_UDP; \
-					m->m_pkthdr.csum_data = offsetof(struct udphdr, uh_sum); \
-				} while (0)
+#define	SCTP_ENABLE_UDP_CSUM(m)	do {					\
+	(m)->m_pkthdr.csum_flags = CSUM_UDP;				\
+	(m)->m_pkthdr.csum_data = offsetof(struct udphdr, uh_sum);	\
+} while (0)
 
-#define SCTP_GET_PKT_VRFID(m, vrf_id)  ((vrf_id = SCTP_DEFAULT_VRFID) != SCTP_DEFAULT_VRFID)
+#define	SCTP_GET_PKT_VRFID(m, vrf_id)					\
+	(((vrf_id) = SCTP_DEFAULT_VRFID) != SCTP_DEFAULT_VRFID)
 
 
 
 /* Attach the chain of data into the sendable packet. */
-#define SCTP_ATTACH_CHAIN(pak, m, packet_length) do { \
-                                                 pak = m; \
-                                                 pak->m_pkthdr.len = packet_length; \
-                         } while(0)
+#define SCTP_ATTACH_CHAIN(pak, m, packet_length)	do {		\
+	(pak) = (m);							\
+	(pak)->m_pkthdr.len = (packet_length);				\
+} while(0)
 
 /* Other m_pkthdr type things */
 #define SCTP_IS_IT_BROADCAST(dst, m) ((m->m_flags & M_PKTHDR) ? in_broadcast(dst, m->m_pkthdr.rcvif) : 0)
@@ -367,7 +377,7 @@ typedef struct callout sctp_os_timer_t;
  */
 
 /* get the v6 hop limit */
-#define SCTP_GET_HLIM(inp, ro)	in6_selecthlim((struct in6pcb *)&inp->ip_inp.inp, (ro ? (ro->ro_rt ? (ro->ro_rt->rt_ifp) : (NULL)) : (NULL)));
+#define SCTP_GET_HLIM(inp, ro)	in6_selecthlim((struct in6pcb *)&inp->ip_inp.inp, (ro ? (ro->ro_rt ? (ro->ro_rt->rt_ifp) : (NULL)) : (NULL)))
 
 /* is the endpoint v6only? */
 #define SCTP_IPV6_V6ONLY(inp)	(((struct inpcb *)inp)->inp_flags & IN6P_IPV6_V6ONLY)
@@ -412,8 +422,7 @@ typedef struct rtentry sctp_rtentry_t;
 /*
  * IP output routines
  */
-#define SCTP_IP_OUTPUT(result, o_pak, ro, stcb, vrf_id) \
-{ \
+#define	SCTP_IP_OUTPUT(result, o_pak, ro, stcb, vrf_id) do { \
 	int o_flgs = IP_RAWOUTPUT; \
 	struct sctp_tcb *local_stcb = stcb; \
 	if (local_stcb && \
@@ -422,10 +431,9 @@ typedef struct rtentry sctp_rtentry_t;
 		o_flgs |= local_stcb->sctp_ep->sctp_socket->so_options & SO_DONTROUTE; \
 	m_clrprotoflags(o_pak); \
 	result = ip_output(o_pak, NULL, ro, o_flgs, 0, NULL); \
-}
+} while (0)
 
-#define SCTP_IP6_OUTPUT(result, o_pak, ro, ifp, stcb, vrf_id) \
-{ \
+#define	SCTP_IP6_OUTPUT(result, o_pak, ro, ifp, stcb, vrf_id) do { \
 	struct sctp_tcb *local_stcb = stcb; \
 	m_clrprotoflags(o_pak); \
 	if (local_stcb && local_stcb->sctp_ep) \
@@ -434,7 +442,7 @@ typedef struct rtentry sctp_rtentry_t;
 				    (ro), 0, 0, ifp, NULL); \
 	else \
 		result = ip6_output(o_pak, NULL, (ro), 0, 0, ifp, NULL); \
-}
+} while (0)
 
 struct mbuf *
 sctp_get_mbuf_for_msg(unsigned int space_needed,
@@ -459,23 +467,21 @@ sctp_get_mbuf_for_msg(unsigned int space_needed,
 
 #define SCTP_DECREMENT_AND_CHECK_REFCOUNT(addr) (atomic_fetchadd_int(addr, -1) == 1)
 #if defined(INVARIANTS)
-#define SCTP_SAVE_ATOMIC_DECREMENT(addr, val) \
-{ \
+#define	SCTP_SAVE_ATOMIC_DECREMENT(addr, val)	do { \
 	int32_t oldval; \
 	oldval = atomic_fetchadd_int(addr, -val); \
 	if (oldval < val) { \
 		panic("Counter goes negative"); \
 	} \
-}
+} while (0)
 #else
-#define SCTP_SAVE_ATOMIC_DECREMENT(addr, val) \
-{ \
+#define	SCTP_SAVE_ATOMIC_DECREMENT(addr, val)	do { \
 	int32_t oldval; \
 	oldval = atomic_fetchadd_int(addr, -val); \
 	if (oldval < val) { \
 		*addr = 0; \
 	} \
-}
+} while (0)
 #endif
 
 #define SCTP_IS_LISTENING(inp) ((inp->sctp_flags & SCTP_PCB_FLAGS_ACCEPTING) != 0)
