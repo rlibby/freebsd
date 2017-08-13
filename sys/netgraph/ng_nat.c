@@ -373,7 +373,8 @@ ng_nat_rcvmsg(node_p node, item_p item, hook_p lasthook)
 			
 			if (LibAliasSetMode(priv->lib, 
 			    ng_nat_translate_flags(mode->flags),
-			    ng_nat_translate_flags(mode->mask)) < 0) {
+			    ng_nat_translate_flags(mode->mask)) ==
+			    PKT_ALIAS_ERROR) {
 				error = ENOMEM;
 				break;
 			}
