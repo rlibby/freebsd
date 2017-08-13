@@ -28,10 +28,14 @@
  * comments below.
  */
 /* BMLEN is now defined in ah_regdomain.h */
-#define	W0(_a) \
-	(((_a) >= 0 && (_a) < 64 ? (((uint64_t) 1)<<(_a)) : (uint64_t) 0))
-#define	W1(_a) \
-	(((_a) > 63 && (_a) < 128 ? (((uint64_t) 1)<<((_a)-64)) : (uint64_t) 0))
+#define	W0(_a)								\
+	(((_a) >= 0 && (_a) < 64) ?					\
+	 (((uint64_t)1) << (((_a) >= 0 && (_a) < 64) ? (_a) : 0)) :	\
+	 (uint64_t)0)
+#define	W1(_a)								\
+	(((_a) > 63 && (_a) < 128) ?					\
+	 (((uint64_t)1) << (((_a) > 63 && (_a) < 128) ? (_a) - 64 : 0)) : \
+	 (uint64_t)0)
 #define BM1(_fa)	{ W0(_fa), W1(_fa) }
 #define BM2(_fa, _fb)	{ W0(_fa) | W0(_fb), W1(_fa) | W1(_fb) }
 #define BM3(_fa, _fb, _fc) \
