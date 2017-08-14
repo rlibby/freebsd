@@ -37,7 +37,7 @@
 #ifndef	_MACHINE_ATOMIC_H_
 #define	_MACHINE_ATOMIC_H_
 
-#define	fence()	__asm __volatile("fence" ::: "memory");
+#define	fence()	__asm __volatile("fence" ::: "memory")
 #define	mb()	fence()
 #define	rmb()	fence()
 #define	wmb()	fence()
