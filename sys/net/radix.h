@@ -151,11 +151,11 @@ void rn_inithead_internal(struct radix_head *rh, struct radix_node *base_nodes,
 #ifndef _KERNEL
 #define R_Malloc(p, t, n) (p = (t) malloc((unsigned int)(n)))
 #define R_Zalloc(p, t, n) (p = (t) calloc(1,(unsigned int)(n)))
-#define R_Free(p) free((char *)p);
+#define	R_Free(p)	free((char *)(p))
 #else
 #define R_Malloc(p, t, n) (p = (t) malloc((unsigned long)(n), M_RTABLE, M_NOWAIT))
 #define R_Zalloc(p, t, n) (p = (t) malloc((unsigned long)(n), M_RTABLE, M_NOWAIT | M_ZERO))
-#define R_Free(p) free((caddr_t)p, M_RTABLE);
+#define	R_Free(p)	free((caddr_t)(p), M_RTABLE)
 
 #define	RADIX_NODE_HEAD_LOCK_INIT(rnh)	\
     rw_init_flags(&(rnh)->rnh_lock, "radix node head", 0)
