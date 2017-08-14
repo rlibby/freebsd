@@ -299,7 +299,7 @@ struct sec_softc {
 	u_int i;							\
 	for (i = 0; i < SEC_POINTERS; i++)				\
 		sec_free_dma_mem(&(desc)->sd_ptr_dmem[i]);		\
-} while (0);
+} while (0)
 
 #define SEC_DESC_PUT_BACK_LT(sc, desc)					\
 	SEC_PUT_BACK_LT(sc, (desc)->sd_lt_used)
