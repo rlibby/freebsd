@@ -365,16 +365,17 @@ ng_nat_rcvmsg(node_p node, item_p item, hook_p lasthook)
 		    {
 			struct ng_nat_mode *const mode = 
 			    (struct ng_nat_mode *)msg->data;
+			unsigned int flags, mask;
 
 			if (msg->header.arglen < sizeof(*mode)) {
 				error = EINVAL;
 				break;
 			}
-			
-			if (LibAliasSetMode(priv->lib, 
-			    ng_nat_translate_flags(mode->flags),
-			    ng_nat_translate_flags(mode->mask)) ==
-			    PKT_ALIAS_ERROR) {
+
+			flags = ng_nat_translate_flags(mode->flags);
+			mask = ng_nat_translate_flags(mode->mask);
+			if ((LibAliasSetMode(priv->lib, flags, mask) & mask) !=
+			    (flags & mask)) {
 				error = ENOMEM;
 				break;
 			}

@@ -2575,14 +2575,16 @@ LibAliasSetMode(
 				 * do a probe for flag values) */
 )
 {
-	int res = -1;
+	unsigned int res;
 
 	LIBALIAS_LOCK(la);
 /* Enable logging? */
 	if (flags & mask & PKT_ALIAS_LOG) {
 		/* Do the enable */
-		if (InitPacketAliasLog(la) == ENOMEM)
+		if (InitPacketAliasLog(la) == ENOMEM) {
+			res = la->packetAliasMode;
 			goto getout;
+		}
 	} else
 /* _Disable_ logging? */
 	if (~flags & mask & PKT_ALIAS_LOG) {
