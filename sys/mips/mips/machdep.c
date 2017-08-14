@@ -390,7 +390,7 @@ mips_postboot_fixup(void)
 #define PRELOAD_PUSH_VALUE(type, value) do {		\
 	*(type *)(preload_ptr + size) = (value);	\
 	size += sizeof(type);				\
-} while (0);
+} while (0)
 
 	/*
 	 * Provide kernel module file information
