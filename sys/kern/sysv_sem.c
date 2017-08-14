@@ -124,9 +124,9 @@ static eventhandler_tag semexit_tag;
 static unsigned sem_prison_slot;	/* prison OSD slot */
 
 #define SEMUNDO_MTX		sem_undo_mtx
-#define SEMUNDO_LOCK()		mtx_lock(&SEMUNDO_MTX);
-#define SEMUNDO_UNLOCK()	mtx_unlock(&SEMUNDO_MTX);
-#define SEMUNDO_LOCKASSERT(how)	mtx_assert(&SEMUNDO_MTX, (how));
+#define SEMUNDO_LOCK()		mtx_lock(&SEMUNDO_MTX)
+#define SEMUNDO_UNLOCK()	mtx_unlock(&SEMUNDO_MTX)
+#define SEMUNDO_LOCKASSERT(how)	mtx_assert(&SEMUNDO_MTX, (how))
 
 struct sem {
 	u_short	semval;		/* semaphore value */

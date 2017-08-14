@@ -196,7 +196,7 @@ static LIST_HEAD(, vmem) vmem_list = LIST_HEAD_INITIALIZER(vmem_list);
 #define	VMEM_UNLOCK(vm)		mtx_unlock(&vm->vm_lock)
 #define	VMEM_LOCK_INIT(vm, name) mtx_init(&vm->vm_lock, (name), NULL, MTX_DEF)
 #define	VMEM_LOCK_DESTROY(vm)	mtx_destroy(&vm->vm_lock)
-#define	VMEM_ASSERT_LOCKED(vm)	mtx_assert(&vm->vm_lock, MA_OWNED);
+#define	VMEM_ASSERT_LOCKED(vm)	mtx_assert(&vm->vm_lock, MA_OWNED)
 
 #define	VMEM_ALIGNUP(addr, align)	(-(-(addr) & -(align)))
 
