@@ -190,10 +190,10 @@ static TAILQ_HEAD(vnet_sysuninit_head, vnet_sysinit) vnet_destructors =
 
 struct sx		vnet_sysinit_sxlock;
 
-#define	VNET_SYSINIT_WLOCK()	sx_xlock(&vnet_sysinit_sxlock);
-#define	VNET_SYSINIT_WUNLOCK()	sx_xunlock(&vnet_sysinit_sxlock);
-#define	VNET_SYSINIT_RLOCK()	sx_slock(&vnet_sysinit_sxlock);
-#define	VNET_SYSINIT_RUNLOCK()	sx_sunlock(&vnet_sysinit_sxlock);
+#define	VNET_SYSINIT_WLOCK()	sx_xlock(&vnet_sysinit_sxlock)
+#define	VNET_SYSINIT_WUNLOCK()	sx_xunlock(&vnet_sysinit_sxlock)
+#define	VNET_SYSINIT_RLOCK()	sx_slock(&vnet_sysinit_sxlock)
+#define	VNET_SYSINIT_RUNLOCK()	sx_sunlock(&vnet_sysinit_sxlock)
 
 struct vnet_data_free {
 	uintptr_t	vnd_start;
