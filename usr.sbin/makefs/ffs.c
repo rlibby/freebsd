@@ -606,7 +606,7 @@ ffs_size_dir(fsnode *root, fsinfo_t *fsopts)
 	if (debug & DEBUG_FS_SIZE_DIR_ADD_DIRENT)			\
 		printf("ADDDIRENT: now: %s (%d) this %d cur %d\n",	\
 		    e, tmpdir.d_namlen, this, curdirsize);		\
-} while (0);
+} while (0)
 
 	/*
 	 * XXX	this needs to take into account extra space consumed
@@ -614,7 +614,7 @@ ffs_size_dir(fsnode *root, fsinfo_t *fsopts)
 	 */
 #define	ADDSIZE(x) do {							\
 	fsopts->size += roundup((x), ffs_opts->fsize);			\
-} while (0);
+} while (0)
 
 	curdirsize = 0;
 	for (node = root; node != NULL; node = node->next) {
