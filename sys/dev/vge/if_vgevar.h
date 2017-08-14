@@ -129,7 +129,7 @@ do {									\
 		(_sc)->vge_cdata.vge_head = NULL;			\
 		(_sc)->vge_cdata.vge_tail = NULL;			\
 	}								\
-} while (0);
+} while (0)
 
 struct vge_ring_data {
 	struct vge_tx_desc	*vge_tx_ring;
