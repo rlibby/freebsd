@@ -174,11 +174,6 @@ static ssize_t show_phys_port_pkey(struct device *dev,
 	return sprintf(buf, "0x%04x\n", pkey);
 }
 
-#define DENTRY_REMOVE(_dentry)						\
-do {									\
-	sysfs_remove_file((_dentry)->kobj, &(_dentry)->dentry.attr);	\
-} while (0);
-
 static int create_sysfs_entry(void *_ctx, struct mlx4_ib_iov_sysfs_attr *_dentry,
 			      char *_name, struct kobject *_kobj,
 			      ssize_t (*show)(struct device *dev,
