@@ -141,7 +141,10 @@ static struct ng_type ng_tcpmss_typestruct = {
 
 NETGRAPH_INIT(tcpmss, &ng_tcpmss_typestruct);
 
-#define	ERROUT(x)	{ error = (x); goto done; }
+#define	ERROUT(x)	do {						\
+	error = (x);							\
+	goto done;							\
+} while (0)
 
 /*
  * Node constructor. No special actions required.
@@ -404,7 +407,7 @@ ng_tcpmss_disconnect(hook_p hook)
 		acc += acc >> 16;			\
 		cksum = (u_short) acc;			\
 	}						\
-} while (0);
+} while (0)
 
 static int
 correct_mss(struct tcphdr *tc, int hlen, uint16_t maxmss, int flags)
