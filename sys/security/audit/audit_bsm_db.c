@@ -100,7 +100,7 @@ static MALLOC_DEFINE(M_AUDITEVNAME, "audit_evname", "Audit event name");
 static struct sx		evnamemap_lock;
 static struct evname_list	evnamemap_hash[EVNAMEMAP_HASH_TABLE_SIZE];
 
-#define	EVNAMEMAP_LOCK_INIT()	sx_init(&evnamemap_lock, "evnamemap_lock");
+#define	EVNAMEMAP_LOCK_INIT()	sx_init(&evnamemap_lock, "evnamemap_lock")
 #define	EVNAMEMAP_RLOCK()	sx_slock(&evnamemap_lock)
 #define	EVNAMEMAP_RUNLOCK()	sx_sunlock(&evnamemap_lock)
 #define	EVNAMEMAP_WLOCK()	sx_xlock(&evnamemap_lock)
