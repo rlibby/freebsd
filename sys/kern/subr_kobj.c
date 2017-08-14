@@ -62,7 +62,7 @@ static int kobj_next_id = 1;
 
 #define	KOBJ_LOCK()		mtx_lock(&kobj_mtx)
 #define	KOBJ_UNLOCK()		mtx_unlock(&kobj_mtx)
-#define	KOBJ_ASSERT(what)	mtx_assert(&kobj_mtx, what);
+#define	KOBJ_ASSERT(what)	mtx_assert(&kobj_mtx, what)
 
 SYSCTL_INT(_kern, OID_AUTO, kobj_methodcount, CTLFLAG_RD,
 	   &kobj_next_id, 0, "");
