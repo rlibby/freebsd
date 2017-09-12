@@ -50,8 +50,10 @@ __FBSDID("$FreeBSD$");
 #include <fcntl.h>
 #include <fts.h>
 #include <limits.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sysexits.h>
 #include <unistd.h>
 
@@ -74,20 +76,361 @@ __FBSDID("$FreeBSD$");
  */
 #define BUFSIZE_SMALL (MAXPHYS)
 
+static char *buf = NULL;
+static size_t bufsize;
+
+static void
+prepare_buf(void)
+{
+	if (buf == NULL) {
+		/*
+		 * Note that buf and bufsize are static. If
+		 * malloc() fails, it will fail at the start
+		 * and not copy only some files. 
+		 */ 
+		if (sysconf(_SC_PHYS_PAGES) > PHYSPAGES_THRESHOLD)
+			bufsize = MIN(BUFSIZE_MAX, MAXPHYS * 8);
+		else
+			bufsize = BUFSIZE_SMALL;
+		buf = malloc(bufsize);
+		if (buf == NULL)
+			err(1, "Not enough memory");
+	}
+}
+
+static void
+find_zero_region(const char *p, size_t len, size_t blksize, size_t *zrbeg,
+    size_t *zrend)
+{
+	const char *beg, *end, *pend;
+
+	if (blksize == 0)
+		abort();
+
+	/*
+	 * The algorithm below is optimized not to inspect every byte of the
+	 * input by skipping ahead blksize bytes at a time when it finds a
+	 * mismatch, and then backtracking on a potential match.
+	 */
+
+	pend = p + len;
+	end = p;
+	for (;;) {
+		/* Wind up, find a zero. */
+		for (; end < pend && *end != 0; end += blksize)
+			;
+		if (end >= pend)
+			break;
+
+		/* So, end must be in bounds, and *end must be zero. */
+
+		beg = end;
+		if (beg > p) {
+			/* Search backward for beginning of region. */
+			do {
+				beg--;
+			} while (*beg == 0);
+			beg++; /* Advance again to first zero byte. */
+		}
+		/* Search forward for end of region. */
+		do {
+			end++;
+		} while (end < pend && *end == 0);
+
+		/* Return this region if it was big enough. */
+		if ((size_t)(end - beg) >= blksize) {
+			*zrbeg = beg - p;
+			*zrend = end - p;
+			return;
+		}
+
+		end += blksize - 1;
+	}
+	/* Return an empty region positioned at the end. */
+	*zrbeg = len;
+	*zrend = len;
+}
+
+#if 0
+static _Thread_local sigjmp_buf find_zero_region_mmap_env;
+
+static void
+find_zero_region_mmap_sigbus(int sigbus)
+{
+	siglongjmp(find_zero_region_mmap_env, EFAULT);
+}
+
+/*
+ * A wrapper for find_zero_region which is safe to use on a file-backed mmap,
+ * even if the file is truncated.  In that case, it returns EFAULT.
+ *
+ * Check ucontext(3), might be better than longjmp?
+ */
+static int
+find_zero_region_mmap(const char *p, size_t len, size_t blksize, size_t *zrbeg,
+    size_t *zrend)
+{
+	struct sigaction act = {}, oact;
+	int error;
+
+	act.sa_handler = find_zero_region_mmap_sigbus;
+	act.sa_flags = SA_RESETHAND;
+	act.sa_
+	if (sigaction(SIGBUS, &act, &oact) != 0) {
+		error = errno;
+		goto out;
+	}
+
+	error = sigsetjmp(env, 0);
+	if (error != 0)
+		goto out;
+
+	find_zero_region(p, len, blksize, zrbeg, zrend);
+ out:
+	return error;
+}
+#endif
+
+static int
+do_write(int to_fd, const char *p, size_t wresid, off_t *wtotal,
+    const char *from_path, const char *to_path, off_t expected)
+{
+	ssize_t wcount;
+
+	for (wcount = 0; wresid > 0; wresid -= wcount) {
+		wcount = write(to_fd, p, wresid);
+		if (wcount <= 0)
+			break;
+		*wtotal += wcount;
+		if (info) {
+			info = 0;
+			(void)fprintf(stderr, "%s -> %s %3d%%\n",
+			    from_path, to_path, cp_pct(*wtotal, expected));
+		}
+		if (wcount >= (ssize_t)wresid)
+			break;
+	}
+	return (wcount != (ssize_t)wresid);
+}
+
+static int
+copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
+{
+	struct stat to_st, *fs;
+	off_t next, rpos, wpos;
+	ssize_t rcount;
+	int rval;
+	bool can_iseek, can_oseek, in_sparse_tail, owe_otrunc;
+#ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
+	char *p;
+	off_t mapbase;
+	size_t maplen, nmaplen, mapoff;
+	bool can_mmap, owe_iseek;
+#endif
+
+	fs = entp->fts_statp;
+	rpos = wpos = 0;
+	rval = 0;
+	can_iseek = fs->st_size > 0; /* Optimize syscalls on empty files. */
+	can_oseek = true;
+	owe_otrunc = false; /* Have seeked, but need write or ftruncate. */
+#ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
+	p = MAP_FAILED;
+	can_mmap = S_ISREG(fs->st_mode) && fs->st_size > 0;
+	owe_iseek = false;
+#endif
+
+	/*
+	 * The general idea is try a few optimizations, but if they fail to
+	 * fall back to read(2)/write(2).  The optimizations are:
+	 *  - Use lseek SEEK_DATA to skip sparse regions in the input.
+	 *  - Use lseek to skip sparse regions in the output.
+	 *  - Use mmap to avoid a copy.
+	 *
+	 * rpos is the position to read from the from_fd.  It is usually the
+	 * same as what the seek offset would be.  Likewise wpos is the
+	 * position to write to the to_fd.  When rpos > wpos, there is either
+	 * buffered data or a gap of zeros in between.
+	 */
+
+	if (fstat(to_fd, &to_st) == 0)
+		can_oseek = S_ISREG(to_st.st_mode) || S_ISBLK(to_st.st_mode) ||
+		    S_ISCHR(to_st.st_mode);
+
+	for (;;) {
+		/* Try to skip ahead to the next non-sparse region. */
+		if (can_iseek) {
+			next = lseek(from_fd, rpos, SEEK_DATA);
+			if (next < 0 && errno == ENXIO) {
+				in_sparse_tail = true;
+			} else if (next < 0) {
+				can_iseek = false;
+			} else {
+				rpos = next;
+				in_sparse_tail = false;
+#ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
+				owe_iseek = false;
+#endif
+			}
+		}
+		/* If we seeked on the input, try seeking on the output. */
+		if (can_oseek && rpos > wpos) {
+			if (lseek(to_fd, rpos, SEEK_SET) != rpos) {
+				can_oseek = false;
+			} else {
+				wpos = rpos;
+				owe_otrunc = true;
+			}
+		}
+		/* Write residual zero region normally, if oseek failed. */
+		if (rpos > wpos) {
+			prepare_buf();
+			memset(buf, 0, MIN(bufsize, (uintmax_t)(rpos - wpos)));
+			do {
+				if (do_write(to_fd, buf,
+				    MIN(bufsize, (uintmax_t)(rpos - wpos)),
+				    &wpos, entp->fts_path, to.p_path,
+				    fs->st_size))
+					goto fail;
+			} while (rpos > wpos);
+			owe_otrunc = false;
+		}
+
+#ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
+		/*
+		 * Mmap and write.  This is really a minor hack, but it wins
+		 * some CPU back.  Some filesystems, such as smbnetfs, don't
+		 * support mmap, so this is a best-effort attempt.
+		 *
+		 * Using mmap(2) here is tricky due to possible races with
+		 * truncate.  Mapping a page past EOF is not allowed and
+		 * results in ENXIO.  Even after establishing a mapping, a
+		 * truncate may occur and invalidate it, causing EFAULT on
+		 * write (or SIGBUS if we were to touch it, which we don't).
+		 * When that occurs, fall back to read.
+		 */
+		if (can_mmap && !in_sparse_tail && wpos < fs->st_size) {
+			mapbase = rounddown(rpos, PAGE_SIZE);
+			mapoff = rpos - mapbase;
+			// XXX explain remapping.
+			// XXX at least on INVARIANTS kernel, no difference
+			// from plain unmap at end.
+			nmaplen = MIN(8 * 1024 * 1024, fs->st_size - mapbase);
+			if (nmaplen != maplen) {
+				munmap(p, maplen);
+				maplen = nmaplen;
+				p = mmap(NULL, maplen, PROT_READ,
+				    MAP_PREFAULT_READ | MAP_SHARED, from_fd,
+				    mapbase);
+			} else {
+				p = mmap(p, maplen, PROT_READ,
+				    MAP_FIXED | MAP_PREFAULT_READ | MAP_SHARED,
+				    from_fd, mapbase);
+			}
+			if (p == MAP_FAILED) {
+				can_mmap = false;
+				continue;
+			}
+			if (do_write(to_fd, p + mapoff, maplen - mapoff, &wpos,
+			    entp->fts_path, to.p_path, fs->st_size)) {
+				/*
+				 * The write failed, but it may have partially
+				 * succeeded.  Try to resync the seek offsets.
+				 * If either fd is not seekable, we're stuck.
+				 * XXX Avoid this by checking that both are
+				 * seekable before attempting mmap?
+				 * XXX Or do we always get a short write count,
+				 * should we just continue?
+				 */
+				wpos = lseek(to_fd, 0, SEEK_CUR);
+				if (wpos < rpos)
+					goto fail;
+				can_mmap = false;
+			}
+			if (wpos > rpos)
+				owe_otrunc = false;
+			if (wpos == fs->st_size)
+				break;
+			rpos = wpos;
+			/* Lazily take care of the seek ourselves. */
+			owe_iseek = true;
+			//munmap(p, maplen);/* TODO MAP_FIXED unmap/remap */
+			//p = MAP_FAILED;
+			continue;
+		}
+		/* Need to seek the input before we issue a read(2). */
+		if (owe_iseek) {
+			owe_iseek = false;
+			if (lseek(from_fd, rpos, SEEK_SET) != rpos)
+				goto fail;
+		}
+#endif
+		prepare_buf();
+		rcount = read(from_fd, buf, bufsize);
+		if (rcount == 0)
+			break;
+		else if (rcount < 0)
+			goto fail;
+		rpos += rcount;
+		/*
+		 * If we are in the sparse tail of a file, verify that we are
+		 * reading zeros and try to seek ahead if so.  Unfortunately
+		 * we can't determine the size of the sparse tail from lseek(2)
+		 * and trying to determine the size with fstat and just
+		 * truncating to there has a race that can wrongly populate
+		 * to_fd with zeros at offsets where from_fd did not have them.
+		 */
+		for (size_t i = 0; i < (size_t)rcount; ) {
+			size_t zrbeg, zrend;
+			if (in_sparse_tail && can_oseek) {
+				find_zero_region(buf + i, rcount - i, 512,
+				    &zrbeg, &zrend);
+			} else
+				zrbeg = zrend = rcount;
+			if (zrbeg > 0) {
+				if (do_write(to_fd, buf + i, zrbeg, &wpos,
+				    entp->fts_path, to.p_path, fs->st_size))
+					goto fail;
+				owe_otrunc = false;
+			}
+			if (zrend > zrbeg) {
+				next = wpos + (zrend - zrbeg);
+				if (lseek(to_fd, next, SEEK_SET) != next) {
+					can_oseek = false;
+					break;
+				}
+				owe_otrunc = true;
+			}
+			i = zrend;
+		}
+	}
+	if (owe_otrunc) {
+		if (ftruncate(to_fd, wpos) < 0)
+			goto fail;
+	}
+ out:
+#ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
+	if (p != MAP_FAILED)
+		munmap(p, maplen);
+	/*
+	 * XXX Old code failed if mmunmap failed, and had this comment.  Why?
+	 * "Some systems don't unmap on close(2)."
+	 * This is just a leak, right?  Anyway does munmap ever fail?
+	 */
+#endif
+	return (rval);
+
+ fail:
+	warn("%s", to.p_path);
+	rval = 1;
+	goto out;
+}
+
 int
 copy_file(const FTSENT *entp, int dne)
 {
-	static char *buf = NULL;
-	static size_t bufsize;
 	struct stat *fs;
-	ssize_t wcount;
-	size_t wresid;
-	off_t wtotal;
-	int ch, checkch, from_fd, rcount, rval, to_fd;
-	char *bufp;
-#ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
-	char *p;
-#endif
+	int ch, checkch, from_fd, rval, to_fd;
 
 	from_fd = to_fd = -1;
 	if (!lflag && !sflag &&
@@ -155,92 +498,7 @@ copy_file(const FTSENT *entp, int dne)
 	rval = 0;
 
 	if (!lflag && !sflag) {
-		/*
-		 * Mmap and write if less than 8M (the limit is so we don't
-		 * totally trash memory on big files.  This is really a minor
-		 * hack, but it wins some CPU back.
-		 * Some filesystems, such as smbnetfs, don't support mmap,
-		 * so this is a best-effort attempt.
-		 */
-#ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
-		if (S_ISREG(fs->st_mode) && fs->st_size > 0 &&
-		    fs->st_size <= 8 * 1024 * 1024 &&
-		    (p = mmap(NULL, (size_t)fs->st_size, PROT_READ,
-		    MAP_PREFAULT_READ | MAP_SHARED, from_fd, (off_t)0)) !=
-		    MAP_FAILED) {
-			wtotal = 0;
-			for (bufp = p, wresid = fs->st_size; ;
-			    bufp += wcount, wresid -= (size_t)wcount) {
-				wcount = write(to_fd, bufp, wresid);
-				if (wcount <= 0)
-					break;
-				wtotal += wcount;
-				if (info) {
-					info = 0;
-					(void)fprintf(stderr,
-					    "%s -> %s %3d%%\n",
-					    entp->fts_path, to.p_path,
-					    cp_pct(wtotal, fs->st_size));
-				}
-				if (wcount >= (ssize_t)wresid)
-					break;
-			}
-			if (wcount != (ssize_t)wresid) {
-				warn("%s", to.p_path);
-				rval = 1;
-			}
-			/* Some systems don't unmap on close(2). */
-			if (munmap(p, fs->st_size) < 0) {
-				warn("%s", entp->fts_path);
-				rval = 1;
-			}
-		} else
-#endif
-		{
-			if (buf == NULL) {
-				/*
-				 * Note that buf and bufsize are static. If
-				 * malloc() fails, it will fail at the start
-				 * and not copy only some files. 
-				 */ 
-				if (sysconf(_SC_PHYS_PAGES) > 
-				    PHYSPAGES_THRESHOLD)
-					bufsize = MIN(BUFSIZE_MAX, MAXPHYS * 8);
-				else
-					bufsize = BUFSIZE_SMALL;
-				buf = malloc(bufsize);
-				if (buf == NULL)
-					err(1, "Not enough memory");
-			}
-			wtotal = 0;
-			while ((rcount = read(from_fd, buf, bufsize)) > 0) {
-				for (bufp = buf, wresid = rcount; ;
-				    bufp += wcount, wresid -= wcount) {
-					wcount = write(to_fd, bufp, wresid);
-					if (wcount <= 0)
-						break;
-					wtotal += wcount;
-					if (info) {
-						info = 0;
-						(void)fprintf(stderr,
-						    "%s -> %s %3d%%\n",
-						    entp->fts_path, to.p_path,
-						    cp_pct(wtotal, fs->st_size));
-					}
-					if (wcount >= (ssize_t)wresid)
-						break;
-				}
-				if (wcount != (ssize_t)wresid) {
-					warn("%s", to.p_path);
-					rval = 1;
-					break;
-				}
-			}
-			if (rcount < 0) {
-				warn("%s", entp->fts_path);
-				rval = 1;
-			}
-		}
+		rval = copy_file_real(entp, from_fd, to_fd);
 	} else if (lflag) {
 		if (link(entp->fts_path, to.p_path)) {
 			warn("%s", to.p_path);
