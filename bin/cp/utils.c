@@ -166,7 +166,8 @@ copy_file(const FTSENT *entp, int dne)
 		if (S_ISREG(fs->st_mode) && fs->st_size > 0 &&
 		    fs->st_size <= 8 * 1024 * 1024 &&
 		    (p = mmap(NULL, (size_t)fs->st_size, PROT_READ,
-		    MAP_SHARED, from_fd, (off_t)0)) != MAP_FAILED) {
+		    MAP_PREFAULT_READ | MAP_SHARED, from_fd, (off_t)0)) !=
+		    MAP_FAILED) {
 			wtotal = 0;
 			for (bufp = p, wresid = fs->st_size; ;
 			    bufp += wcount, wresid -= (size_t)wcount) {
