@@ -567,7 +567,7 @@ GLOBAL bit32 saEncryptGetMode(agsaRoot_t        *agRoot,
     bit32 ret = AGSA_RC_NOT_SUPPORTED;
 
     smTraceFuncEnter(hpDBG_VERY_LOUD,"29");
-    agContext = agContext; /* Lint*/
+    (void)agContext;
     SA_DBG4(("saEncryptGetMode, encryptInfo %p\n",encryptInfo ));
     if(smIS_SPCV(agRoot))
     {
