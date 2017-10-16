@@ -247,9 +247,6 @@ itdssGetOperatingOptionParams(
                       itdssOperatingOption_t  *OperatingOption
                       ) 
 {
-  char    *key = agNULL;
-  char    *subkey1 = agNULL;
-  char    *subkey2 = agNULL;
   char    *buffer;
   bit32   buffLen;
   bit32   lenRecv = 0;
@@ -266,12 +263,6 @@ itdssGetOperatingOptionParams(
   */
 
 
-  /* to remove compiler warnings */ 
-  pLastUsedChar   = pLastUsedChar;
-  lenRecv         = lenRecv;
-  subkey2         = subkey2;
-  subkey1         = subkey1;
-  key             = key;
   buffer          = &tmpBuffer[0];
   buffLen         = sizeof (tmpBuffer);
 
