@@ -971,7 +971,7 @@ tdsmEventCB(
                         tiRoot,
                         tiportalContext,
                         tiDeviceHandle,
-                        eventType,
+                        (tiIntrEventType_t)eventType,
                         eventStatus,
                         (void *)currentTaskTag
                        );

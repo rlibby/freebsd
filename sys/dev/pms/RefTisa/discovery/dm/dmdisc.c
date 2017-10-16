@@ -6385,8 +6385,7 @@ dmDumpAllMainExp(
     DM_DBG3(("dmDumpAllMainExp: expander id %d\n", tempExpander->id));
     DM_DBG3(("dmDumpAllMainExp: exp addrHi 0x%08x\n", tempExpander->dmDevice->SASAddressID.sasAddressHi));
     DM_DBG3(("dmDumpAllMainExp: exp addrLo 0x%08x\n", tempExpander->dmDevice->SASAddressID.sasAddressLo));
-    if ((tempExpander->dmDevice->dmPortContext == onePortContext)
-       )
+    if (tempExpander->dmDevice->dmPortContext == onePortContext)
     {
       DM_DBG3(("dmDumpAllMainExp: found expander id %d\n", tempExpander->id));
       DM_DBG3(("dmDumpAllMainExp: found exp addrHi 0x%08x\n", tempExpander->dmDevice->SASAddressID.sasAddressHi));
@@ -6437,8 +6436,7 @@ dmDumpAllMainDevice(
     DM_DBG3(("dmDumpAllMainDevice: addrHi 0x%08x\n", oneDeviceData->SASAddressID.sasAddressHi));
     DM_DBG3(("dmDumpAllMainDevice: addrLo 0x%08x\n", oneDeviceData->SASAddressID.sasAddressLo));
     total++;
-    if ((oneDeviceData->dmPortContext == onePortContext)
-       )
+    if (oneDeviceData->dmPortContext == onePortContext)
     {
       DM_DBG3(("dmDumpAllMainDevice: found oneDeviceData id %d\n", oneDeviceData->id));
       DM_DBG3(("dmDumpAllMainDevice: found addrHi 0x%08x\n", oneDeviceData->SASAddressID.sasAddressHi));

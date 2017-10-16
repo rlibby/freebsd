@@ -111,6 +111,11 @@ tdsaGetEsglPagesInfo(
                      bit32    *NumPages
                      );
 
+osGLOBAL void
+tdsaReadHardwareInfo(
+                     tiRoot_t *tiRoot
+                     );
+
 osGLOBAL void 
 tdsaGetPortParams(
                   tiRoot_t *tiRoot

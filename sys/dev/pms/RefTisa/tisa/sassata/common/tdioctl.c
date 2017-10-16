@@ -3571,9 +3571,6 @@ tdsaGetNumOfLUNIOCTL(
                void                *agParam3
                )
 {  
-  tdsaRoot_t	              *tdsaRoot			= (tdsaRoot_t *) tiRoot->tdData;
-  tdsaContext_t               *tdsaAllShared 	= (tdsaContext_t *)&tdsaRoot->tdsaAllShared;
-  agsaRoot_t	              *agRoot 			= &(tdsaAllShared->agRootInt);
   tdDeviceLUNInfoIOCTL_t	  *pDeviceLUNInfo	= agNULL;
   tiDeviceHandle_t            *devHandle 		= agNULL;
   void				          *tiRequestBody 	= agNULL;
@@ -3645,7 +3642,6 @@ osGLOBAL void ostiNumOfLUNIOCTLRsp(
   tdsaContext_t               *tdsaAllShared = (tdsaContext_t *)&tdsaRoot->tdsaAllShared;
   tiIOCTLPayload_t            *agIOCTLPayload;
   tdDeviceLUNInfoIOCTL_t	  *pDeviceLUNInfo = NULL;
-  bit32                       count = 0;
   bit32                       numOfLUN =0;
   
   TI_DBG1(("ostiNumOfLUNIOCTLRsp: start, status = %d\n", status));

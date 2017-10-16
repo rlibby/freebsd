@@ -328,6 +328,13 @@ GLOBAL bit32 siRemoveDevHandle(
                               agsaDevHandle_t *agDevHandle
                               );
 
+/*** SAIOCTLCMD.C ***/
+
+GLOBAL void saReturnRequestToFreePool(
+                            agsaRoot_t          *agRoot,
+                            agsaIORequestDesc_t *pRequest
+                            );
+
 /*** SAMPIRSP.C ***/
 GLOBAL FORCEINLINE bit32 mpiParseOBIomb(
                             agsaRoot_t            *agRoot,

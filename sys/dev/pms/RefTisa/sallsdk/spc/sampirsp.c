@@ -38,13 +38,6 @@ __FBSDID("$FreeBSD$");
 #endif
 
 /******************************************************************************/
-/* Protoytpes */
-void saReturnRequestToFreePool(
-                            agsaRoot_t          *agRoot,
-                            agsaIORequestDesc_t *pRequest
-                            );
-							
-/******************************************************************************/
 /*! \brief Process Outbound IOMB Message
  *
  *  Process Outbound IOMB from SPC

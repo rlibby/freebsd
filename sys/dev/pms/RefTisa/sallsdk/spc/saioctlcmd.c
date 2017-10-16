@@ -2109,10 +2109,9 @@ static void saUpdateIOMap(
  *
  */
 /*******************************************************************************/
-agsaIORequestDesc_t* saGetRequestFromFreePool(
-                                            agsaRoot_t      *agRoot,
-                                            agsaContext_t   *agContext
-                                            )
+LOCAL agsaIORequestDesc_t* saGetRequestFromFreePool(
+    agsaRoot_t      *agRoot,
+    agsaContext_t   *agContext)
 {
   agsaLLRoot_t          *saRoot = (agsaLLRoot_t *)(agRoot->sdkData);
   agsaIORequestDesc_t   *pRequest = agNULL;
