@@ -26,7 +26,6 @@ CFLAGS+=-Wnested-externs
 CFLAGS+=-Woverflow
 CFLAGS+=-Wmissing-prototypes
 CFLAGS+=-Wparentheses
-CFLAGS+=-w
 
 #CFLAGS+=-g
 
