@@ -3388,10 +3388,9 @@ tdsaSendTMFIoctl( tiRoot_t	     	*tiRoot,
 		)
 {
 	bit32		status;
-	tmf_pass_through_req_t  *tmf_req = (tmf_pass_through_req_t*)agIOCTLPayload->FunctionSpecificArea;
 #if !(defined(__FreeBSD__))
+	tmf_pass_through_req_t  *tmf_req = (tmf_pass_through_req_t*)agIOCTLPayload->FunctionSpecificArea;
 	status = ostiSendResetDeviceIoctl(tiRoot, agParam2, tmf_req->pathId, tmf_req->targetId, tmf_req->lun, resetType);
-#endif
 	TI_DBG3(("Status returned from ostiSendResetDeviceIoctl is %d\n",status));
 	if(status !=  IOCTL_CALL_SUCCESS)
 	{
@@ -3399,6 +3398,9 @@ tdsaSendTMFIoctl( tiRoot_t	     	*tiRoot,
 		return status;
 	}
 	status = IOCTL_CALL_SUCCESS;
+#else
+	status = IOCTL_CALL_INVALID_CODE;
+#endif
 	return status;
 }
 
