@@ -4241,36 +4241,36 @@ tiCOMPortInit(
     if (tiIS_SPC(agRoot))
     {
       TI_DBG1(("tiCOMPortInit: SPC HDA\n"));
-      HDAImg.aap1Img = (bit8*)(&aap1array);
+      HDAImg.aap1Img = aap1array;
       HDAImg.aap1Len = sizeof( aap1array);
-      HDAImg.iopImg  = (bit8*)(&ioparray);
+      HDAImg.iopImg  = ioparray;
       HDAImg.iopLen  = sizeof(  ioparray);
-      HDAImg.istrImg = (bit8*)(&istrarray);
+      HDAImg.istrImg = istrarray;
       HDAImg.istrLen = sizeof( istrarray);
 
-      HDAImg.ilaImg  = (bit8*)(&ilaarray);
+      HDAImg.ilaImg  = ilaarray;
       HDAImg.ilaLen  = sizeof(ilaarray);
     }
     else if (tiIS_SPC6V(agRoot))
     {
       TI_DBG1(("tiCOMPortInit: SPCv HDA\n"));
-      HDAImg.aap1Img = (bit8*)(&spcv_aap1array);
-      HDAImg.aap1Len =  sizeof( spcv_aap1array);
-      HDAImg.iopImg  = (bit8*)(&spcv_ioparray);
+      HDAImg.aap1Img = spcv_aap1array;
+      HDAImg.aap1Len = sizeof( spcv_aap1array);
+      HDAImg.iopImg  = spcv_ioparray;
       HDAImg.iopLen  = sizeof(  spcv_ioparray);
 
-      HDAImg.ilaImg  = (bit8*)(&spcv_ilaarray);
+      HDAImg.ilaImg  = spcv_ilaarray;
       HDAImg.ilaLen  = sizeof(spcv_ilaarray);
     }
     else if (tIsSPCV12G(agRoot))
     {
       TI_DBG1(("tiCOMPortInit: SPCv12G HDA\n"));
-      HDAImg.aap1Img = (bit8*)(&spcv12g_raaearray);
-      HDAImg.aap1Len =  sizeof( spcv12g_raaearray);
-      HDAImg.iopImg  = (bit8*)(&spcv12g_ioparray);
+      HDAImg.aap1Img = spcv12g_raaearray;
+      HDAImg.aap1Len = sizeof( spcv12g_raaearray);
+      HDAImg.iopImg  = spcv12g_ioparray;
       HDAImg.iopLen  = sizeof(  spcv12g_ioparray);
 
-      HDAImg.ilaImg  = (bit8*)(&spcv12g_ilaarray);
+      HDAImg.ilaImg  = spcv12g_ilaarray;
       HDAImg.ilaLen  = sizeof(spcv12g_ilaarray);
     }
     else

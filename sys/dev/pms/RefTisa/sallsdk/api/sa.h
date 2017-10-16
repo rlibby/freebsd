@@ -2445,14 +2445,14 @@ typedef struct agsaQueueConfig_s
 
 typedef struct agsaFwImg_s
 {
-  bit8    *aap1Img;             /**< AAP1 Image */
-  bit32   aap1Len;              /**< AAP1 Image Length */
-  bit8    *ilaImg;              /**< ILA Image */
-  bit32   ilaLen;               /**< ILA Image Length */
-  bit8    *iopImg;              /**< IOP Image */
-  bit32   iopLen;               /**< IOP Image Length */
-  bit8    *istrImg;             /**< Init String */
-  bit32   istrLen;              /**< Init String Length */
+  bit8 const *aap1Img;          /**< AAP1 Image */
+  bit32      aap1Len;           /**< AAP1 Image Length */
+  bit8 const *ilaImg;           /**< ILA Image */
+  bit32      ilaLen;            /**< ILA Image Length */
+  bit8 const *iopImg;           /**< IOP Image */
+  bit32      iopLen;            /**< IOP Image Length */
+  bit8 const *istrImg;          /**< Init String */
+  bit32      istrLen;           /**< Init String Length */
 } agsaFwImg_t;
 
 /** \brief generic memory descriptor
