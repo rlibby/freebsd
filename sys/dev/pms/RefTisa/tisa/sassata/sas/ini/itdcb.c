@@ -2208,7 +2208,7 @@ itdssIOSuccessHandler(
     TI_DBG2(("itdssIOSuccessHandler: sense data \n"));
 
     senseData.senseData = &senseDataPayload;
-    senseData.senseLen = MIN(256, senseLen);
+    senseData.senseLen = MIN(255, senseLen);
     /* debugging */
     tdhexdump("ResponseIU I", (bit8 *)&agSSPRespIU, sizeof(agsaSSPResponseInfoUnit_t));
 
@@ -4498,7 +4498,7 @@ itdssIOUnderFlowWithChkConditionHandler(
     TI_DBG2(("itdssIOUnderFlowWithChkConditionHandler: sense data \n"));
 
     senseData.senseData = &senseDataPayload;
-    senseData.senseLen = MIN(256, senseLen);
+    senseData.senseLen = MIN(255, senseLen);
     /* debugging */
     tdhexdump("ResponseIU I", (bit8 *)&agSSPRespIU, sizeof(agsaSSPResponseInfoUnit_t));
 
