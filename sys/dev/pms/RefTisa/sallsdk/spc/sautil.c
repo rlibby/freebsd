@@ -73,7 +73,7 @@ int siIsHexDigit(char a)
 /*******************************************************************************/
 FORCEINLINE
 void*
-si_memcpy(void *dst,  void *src, bit32 count)
+si_memcpy(void *dst, const void *src, bit32 count)
 {
 /*
   bit32 x;

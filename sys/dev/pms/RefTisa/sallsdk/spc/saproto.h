@@ -241,7 +241,7 @@ GLOBAL void siPrintBuffer(
                           bit32                 length
                           );
 int siIsHexDigit(char a);
-GLOBAL FORCEINLINE void* si_memcpy(void *dst, void *src, bit32 count);
+GLOBAL FORCEINLINE void* si_memcpy(void *dst, const void *src, bit32 count);
 GLOBAL FORCEINLINE void* si_memset(void *s, int c, bit32 n);
 
 GLOBAL void siDumpActiveIORequests(
@@ -884,7 +884,7 @@ GLOBAL void siUpdateBarOffsetTable(agsaRoot_t     *agRoot, bit32   Spc_Type);
 
 GLOBAL void siPciCpyMem(agsaRoot_t *agRoot,
                        bit32 soffset,
-                       const void *dst,
+                       void *dst,
                        bit32 DWcount,
                        bit32 busBaseNumber
                        );

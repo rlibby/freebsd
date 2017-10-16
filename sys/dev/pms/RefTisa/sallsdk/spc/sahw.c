@@ -64,10 +64,11 @@ LOCAL bit32 si_V_SoftReset(agsaRoot_t  *agRoot, bit32       signature);
 LOCAL bit32 siSpcSoftResetRDYChk(agsaRoot_t *agRoot);
 
 #ifdef SA_ENABLE_HDA_FUNCTIONS
-LOCAL void siPciMemCpy(agsaRoot_t *agRoot, bit32 dstoffset, void *src,
+LOCAL void siPciMemCpy(agsaRoot_t *agRoot, bit32 dstoffset, const void *src,
                        bit32 DWcount, bit32 busBaseNumber);
 
-LOCAL bit32 siBar4Cpy(agsaRoot_t  *agRoot, bit32 offset, bit8 *parray, bit32 array_size);
+LOCAL bit32 siBar4Cpy(agsaRoot_t  *agRoot, bit32 offset, const bit8 *parray,
+                      bit32 array_size);
 #endif
 
 /******************************************************************************/
@@ -1804,15 +1805,15 @@ GLOBAL bit32 siHDAMode(
 /*******************************************************************************/
 LOCAL void siPciMemCpy(agsaRoot_t *agRoot,
                        bit32 dstoffset,
-                       void *src, 
+                       const void *src,
                        bit32 DWcount,
                        bit32 busBaseNumber
                        )
 {
     bit32 i, val;
-    bit32 *src1;
+    const bit32 *src1;
 
-    src1 = (bit32 *)src;
+    src1 = (const bit32 *)src;
 
     for (i= 0; i < DWcount; i++)
     {
@@ -1841,7 +1842,7 @@ LOCAL void siPciMemCpy(agsaRoot_t *agRoot,
 LOCAL bit32 siBar4Cpy(
                       agsaRoot_t  *agRoot,
                       bit32       offset,
-                      bit8        * parray,
+                      const bit8  * parray,
                       bit32       array_size
                       )
 {
@@ -2990,7 +2991,7 @@ GLOBAL void siCheckQs(
 }
 GLOBAL void siPciCpyMem(agsaRoot_t *agRoot,
                        bit32 soffset,
-                       const void *dst,
+                       void *dst,
                        bit32 DWcount,
                        bit32 busBaseNumber
                        )
