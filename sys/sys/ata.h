@@ -572,9 +572,9 @@ struct atapi_sense {
 #define ATA_SENSE_VOLUME_OVERFLOW	0x0d    /* volume overflow */
 #define ATA_SENSE_MISCOMPARE		0x0e    /* data dont match the medium */
 #define ATA_SENSE_RESERVED		0x0f
-#define	ATA_SENSE_ILI			0x20;
-#define	ATA_SENSE_EOM			0x40;
-#define	ATA_SENSE_FILEMARK		0x80;
+#define	ATA_SENSE_ILI			0x20
+#define	ATA_SENSE_EOM			0x40
+#define	ATA_SENSE_FILEMARK		0x80
 
     u_int32_t   cmd_info;		/* cmd information */
     u_int8_t	sense_length;		/* additional sense len (n-7) */
