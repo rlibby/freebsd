@@ -2202,6 +2202,7 @@ local void init_block(s)
 	pqdownheap(s, tree, SMALLEST);					\
 } while (0)
 
+
 /* ===========================================================================
  * Compares to subtrees, using the tree depth as tie breaker when
  * the subtrees have equal frequency. This minimizes the worst case length.
