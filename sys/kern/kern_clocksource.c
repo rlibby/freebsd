@@ -83,6 +83,8 @@ static struct mtx	et_hw_mtx;
 		mtx_unlock_spin(&et_hw_mtx);				\
 } while (0)
 
+
+
 static struct eventtimer *timer = NULL;
 static sbintime_t	timerperiod;	/* Timer period for periodic mode. */
 static sbintime_t	statperiod;	/* statclock() events period. */
