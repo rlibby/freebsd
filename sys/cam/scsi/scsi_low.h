@@ -639,17 +639,21 @@ void scsi_low_bus_reset(struct scsi_low_softc *);
 	(ti)->ti_phase = (phase);			\
 } while (0)
 
+
 #define	SCSI_LOW_SETUP_MSGPHASE(slp, PHASE)	do {	\
 	(slp)->sl_msgphase = (PHASE);			\
 } while (0)
+
 
 #define	SCSI_LOW_ASSERT_ATN(slp)	do {		\
 	(slp)->sl_atten = 1;				\
 } while (0)
 
+
 #define	SCSI_LOW_DEASSERT_ATN(slp)	do {		\
 	(slp)->sl_atten = 0;				\
 } while (0)
+
 
 /*************************************************
  * Inline functions
