@@ -173,6 +173,7 @@ static void vm_map_wire_entry_failure(vm_map_t map, vm_map_entry_t entry,
 		(start) = (end);					\
 } while (0)
 
+
 /*
  *	vm_map_startup:
  *
@@ -1677,6 +1678,7 @@ vm_map_simplify_entry(vm_map_t map, vm_map_entry_t entry)
 		_vm_map_clip_start((map), (entry), (startaddr));	\
 } while (0)
 
+
 /*
  *	This routine is called only when it is known that
  *	the entry must be split.
@@ -1762,6 +1764,7 @@ _vm_map_clip_start(vm_map_t map, vm_map_entry_t entry, vm_offset_t start)
 	if ((endaddr) < (entry)->end)					\
 		_vm_map_clip_end((map), (entry), (endaddr));		\
 } while (0)
+
 
 /*
  *	This routine is called only when it is known that
