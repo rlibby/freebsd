@@ -140,12 +140,10 @@ static struct ng_type ng_tcpmss_typestruct = {
 };
 
 NETGRAPH_INIT(tcpmss, &ng_tcpmss_typestruct);
-
 #define	ERROUT(x)	do {						\
 	error = (x);							\
 	goto done;							\
 } while (0)
-
 /*
  * Node constructor. No special actions required.
  */
@@ -154,7 +152,6 @@ ng_tcpmss_constructor(node_p node)
 {
 	return (0);
 }
-
 /*
  * Add a hook. Any unique name is OK.
  */
