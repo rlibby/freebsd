@@ -276,6 +276,7 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 			} else if (next < 0) {
 				can_iseek = false;
 			} else {
+				warnx("iseek %jd -> %jd", rpos, next);
 				rpos = next;
 				in_sparse_tail = false;
 #ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
@@ -435,6 +436,187 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 	rval = 1;
 	goto out;
 }
+
+/*
+ * Describe the region of the file represented by fd from offset off as a data
+ * region, a hole region, or a tail hole.  Return zero on success (besides IO
+ * errors, support for lseek(2) SEEK_DATA and SEEK_HOLE is also optional).
+ * After this operation, the fd's offset is the same as *end.  If off is
+ * already past EOF, the region will be described as a tail hole.
+ *
+ * The possible outcomes are:
+ *  - Failure,
+ *  - Hole (size described),
+ *  - Tail hole (size not described),
+ *  - Data region (size described with describe_data),
+ *  - Data region (size not described without describe_data).
+ *
+ * It is also possible for the region to be described as zero size due to
+ * races with file operations.
+ *
+ * The describe_data option is provided because it is likely that SEEK_HOLE is
+ * a pessimization for the common case.  It is likely easy for a filesystem to
+ * find the next data region because it is likely that filesystems can
+ * represent large holes efficiently.  In any case, once a hole is found (by
+ * searching for the next data region), the data is known to be zero, and there
+ * is no need to revisit the region to find the file data.  Conversely,
+ * searching for a hole may involve scanning the entire file map, possibly only
+ * to discover that the file has no holes, and in any case a data region must
+ * be revisited in order to know the data.  Moreover, the representation of a
+ * hole in the source filesystem may not be tight anyway.
+ *
+ * The tail hole description is unsatisfying, but it's the best we can do with
+ * the lseek(2) interface.  It would be nice if SEEK_DATA were to describe a
+ * zero-size virtual region at EOF like SEEK_HOLE already does.  Note that
+ * we do not find the EOF in this case; we could ask, but that invites a race
+ * with append, which could cause us to consider a zero region which never
+ * existed in the file.
+ *
+ * XXX do we want the warnx cases below to be fatal errors?
+ */
+int
+cp_describe_region(int fd, off_t off, off_t *end, bool *hole, bool *tail,
+    bool describe_data)
+{
+	off_t next;
+	int rval;
+
+	rval = 0;
+	*end = off;
+	*hole = false;
+	*tail = false;
+
+	next = lseek(fd, off, SEEK_DATA);
+	if (next < 0 && errno == ENXIO) {
+		/* Tail hole. */
+		*hole = true;
+		*tail = true;
+	} else if (next > off) {
+		/* Hole. */
+		*end = next;
+		*hole = true;
+	} else if (next < off) {
+		/* Not implemented, or maybe a real error. */
+		rval = 1;
+		if (next >= 0)
+			warnx("bad lseek SEEK_DATA");
+	} else if (describe_data) {
+		/* We were in a data region.  Find the next hole. */
+		next = lseek(fd, off, SEEK_HOLE);
+		if (next < off) {
+			rval = 1;
+			if (next >= 0)
+				warnx("bad lseek SEEK_HOLE");
+		} else {
+			/* Data. */
+			*end = next;
+		}
+	}
+
+	return (rval);
+}
+
+#define	CPF_MMAP	0x1
+#define	CPF_SPARSE	0x2
+#define CPF_UNSPARSE	0x4
+
+/*
+ * Copy a file from from_fd to to_fd.
+ */
+int
+cp_copy_file(int from_fd, int to_fd, const struct stat *from_st,
+    const struct stat *to_st, int flags,
+    (void *)(off_t, void *)status_cb, void *status_ctx)
+{
+	struct stat from_stat, to_stat;
+	const struct stat *fs;
+	off_t next, rpos, wpos;
+	size_t blksize;
+	ssize_t rcount;
+	int rval;
+	bool can_iseek, can_oseek, hole, in_sparse_tail, owe_otrunc;
+#ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
+	char *p;
+	off_t mapbase;
+	size_t maplen, nmaplen, mapoff;
+	bool can_mmap, owe_iseek;
+#endif
+
+	rpos = wpos = 0;
+	blksize = 512;
+	rval = 0;
+	can_iseek = true;
+	can_oseek = true;
+	owe_otrunc = false; /* Have seeked, but need write or ftruncate. */
+#ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
+	p = MAP_FAILED;
+	can_mmap = S_ISREG(fs->st_mode) && fs->st_size > 0;
+	owe_iseek = false;
+#endif
+
+	if (from_st == NULL) {
+		if (fstat(from_fd, &from_stat) == 0)
+			from_st = &from_stat;
+	}
+
+	/* Optimize empty files. */
+	if (from_st != NULL && from_st->st_size == 0)
+		goto out;
+
+	/*
+	 * The general idea is try a few optimizations, but if they fail to
+	 * fall back to read(2)/write(2).  The optimizations are:
+	 *  - Use lseek SEEK_DATA to skip sparse regions in the input.
+	 *  - Use lseek to skip sparse regions in the output.
+	 *  - Use mmap to avoid a copy.
+	 *
+	 * We try to be forgiving so that if the files only support read and
+	 * write, copy still works.
+	 *
+	 * rpos is the position to read from the from_fd.  It is usually the
+	 * same as what the seek offset would be.  Likewise wpos is the
+	 * position to write to the to_fd.  When rpos > wpos, there is either
+	 * buffered data or a gap of zeros in between.
+	 */
+
+	if (to_st == NULL) {
+		if (fstat(to_fd, &to_stat) == 0)
+			to_st = &to_st;
+	}
+
+	if (to_st != NULL) {
+		can_oseek = S_ISREG(to_st->st_mode) ||
+		    S_ISBLK(to_st->st_mode) || S_ISCHR(to_st->st_mode);
+		if (to_st->st_blksize > 0)
+			blksize = to_st.st_blksize;
+	}
+
+	if (fstat(to_fd, &to_st) == 0) {
+		can_oseek = S_ISREG(to_st.st_mode) || S_ISBLK(to_st.st_mode) ||
+		    S_ISCHR(to_st.st_mode);
+		if (to_st.st_blksize > 0)
+			blksize = to_st.st_blksize;
+	}
+
+	for (;;) {
+		if (can_iseek) {
+			if (cp_describe_region(from_fd, rpos, &next, &hole,
+			    &in_sparse_tail, false) == 0) {
+				if (!in_sparse_tail) {
+					rpos = next;
+#ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
+					owe_iseek = false;
+#endif
+				}
+			} else {
+				can_iseek = false;
+			}
+		}
+	}
+
+ out:
+}
+
 
 int
 copy_file(const FTSENT *entp, int dne)
