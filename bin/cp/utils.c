@@ -197,7 +197,7 @@ do_write(int to_fd, const char *p, size_t wresid, off_t *wtotal,
 {
 	ssize_t wcount;
 
-	for (wcount = 0; wresid > 0; wresid -= wcount) {
+	for (wcount = 0; wresid > 0; wresid -= wcount, p += wcount) {
 		wcount = write(to_fd, p, wresid);
 		if (wcount <= 0)
 			break;
@@ -207,17 +207,19 @@ do_write(int to_fd, const char *p, size_t wresid, off_t *wtotal,
 			(void)fprintf(stderr, "%s -> %s %3d%%\n",
 			    from_path, to_path, cp_pct(*wtotal, expected));
 		}
-		if (wcount >= (ssize_t)wresid)
+		if ((size_t)wcount >= wresid)
 			break;
 	}
-	return (wcount != (ssize_t)wresid);
+	return (wcount < 0 || (size_t)wcount != wresid);
 }
 
 static int
 copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 {
-	struct stat to_st, *fs;
+	struct stat to_st;
+	const struct stat *fs;
 	off_t next, rpos, wpos;
+	size_t blksize;
 	ssize_t rcount;
 	int rval;
 	bool can_iseek, can_oseek, in_sparse_tail, owe_otrunc;
@@ -230,8 +232,9 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 
 	fs = entp->fts_statp;
 	rpos = wpos = 0;
+	blksize = 512;
 	rval = 0;
-	can_iseek = fs->st_size > 0; /* Optimize syscalls on empty files. */
+	can_iseek = true;
 	can_oseek = true;
 	owe_otrunc = false; /* Have seeked, but need write or ftruncate. */
 #ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
@@ -239,6 +242,10 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 	can_mmap = S_ISREG(fs->st_mode) && fs->st_size > 0;
 	owe_iseek = false;
 #endif
+
+	/* Optimize empty files. */
+	if (fs->st_size == 0)
+		goto out;
 
 	/*
 	 * The general idea is try a few optimizations, but if they fail to
@@ -253,9 +260,12 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 	 * buffered data or a gap of zeros in between.
 	 */
 
-	if (fstat(to_fd, &to_st) == 0)
+	if (fstat(to_fd, &to_st) == 0) {
 		can_oseek = S_ISREG(to_st.st_mode) || S_ISBLK(to_st.st_mode) ||
 		    S_ISCHR(to_st.st_mode);
+		if (to_st.st_blksize > 0)
+			blksize = to_st.st_blksize;
+	}
 
 	for (;;) {
 		/* Try to skip ahead to the next non-sparse region. */
@@ -383,7 +393,7 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 		for (size_t i = 0; i < (size_t)rcount; ) {
 			size_t zrbeg, zrend;
 			if (in_sparse_tail && can_oseek) {
-				find_zero_region(buf + i, rcount - i, 512,
+				find_zero_region(buf + i, rcount - i, blksize,
 				    &zrbeg, &zrend);
 			} else
 				zrbeg = zrend = rcount;
