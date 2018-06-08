@@ -76,6 +76,10 @@ __FBSDID("$FreeBSD$");
  */
 #define BUFSIZE_SMALL (MAXPHYS)
 
+#define	MMAP_MAX	(8 * 1024 * 1024)
+
+#define	WINDOW_MAX	MAX(BUFSIZE_MAX, MMAP_MAX)
+
 static char *buf = NULL;
 static size_t bufsize;
 
@@ -138,6 +142,8 @@ find_zero_region(const char *p, size_t len, size_t blksize, size_t *zrbeg,
 		} while (end < pend && *end == 0);
 
 		/* Return this region if it was big enough. */
+		// XXX or if len < blksize, we want to be able to get a final
+		// unaligned tail.
 		if ((size_t)(end - beg) >= blksize) {
 			*zrbeg = beg - p;
 			*zrend = end - p;
@@ -219,10 +225,10 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 	struct stat to_st;
 	const struct stat *fs;
 	off_t next, rpos, wpos;
-	size_t blksize;
+	size_t blksize, wsize;
 	ssize_t rcount;
 	int rval;
-	bool can_iseek, can_oseek, in_sparse_tail, owe_otrunc;
+	bool can_iseek, can_oseek, in_sparse_tail, owe_otrunc, wstart;
 #ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
 	char *p;
 	off_t mapbase;
@@ -233,6 +239,7 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 	fs = entp->fts_statp;
 	rpos = wpos = 0;
 	blksize = 512;
+	wsize = WINDOW_MAX; /* Initial large window optimizes common case. */
 	rval = 0;
 	can_iseek = true;
 	can_oseek = true;
@@ -253,6 +260,9 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 	 *  - Use lseek SEEK_DATA to skip sparse regions in the input.
 	 *  - Use lseek to skip sparse regions in the output.
 	 *  - Use mmap to avoid a copy.
+	 *
+	 * We try to be forgiving so that if the files only support read and
+	 * write, copy still works.
 	 *
 	 * rpos is the position to read from the from_fd.  It is usually the
 	 * same as what the seek offset would be.  Likewise wpos is the
@@ -276,7 +286,10 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 			} else if (next < 0) {
 				can_iseek = false;
 			} else {
-				warnx("iseek %jd -> %jd", rpos, next);
+				if (next > rpos) {
+					/* Reset the window. */
+					wsize = 0;
+				}
 				rpos = next;
 				in_sparse_tail = false;
 #ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
@@ -293,6 +306,27 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 				owe_otrunc = true;
 			}
 		}
+
+		/*
+		 * Adjust the window size;
+		 */
+		if (can_oseek) {
+			/*
+			 * Window size sequence 1 1 2 4 8 ... times blksize.
+			 */
+			if (wsize == 0) {
+				wsize = blksize;
+				wstart = true;
+			} else if (wstart) {
+				wstart = false;
+			} else {
+				wsize *= 2;
+			}
+			wsize = MIN(wsize, WINDOW_MAX);
+		} else {
+			wsize = WINDOW_MAX;
+		}
+
 		/* Write residual zero region normally, if oseek failed. */
 		if (rpos > wpos) {
 			prepare_buf();
@@ -326,7 +360,11 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 			// XXX explain remapping.
 			// XXX at least on INVARIANTS kernel, no difference
 			// from plain unmap at end.
-			nmaplen = MIN(8 * 1024 * 1024, fs->st_size - mapbase);
+			// XXX so during ramp up we could keep a larger mapping
+			// and then advance mapoff ... but is it worth it?
+			nmaplen = MIN(8 * 1024 * 1024, mapoff + wsize);
+			nmaplen = MIN(nmaplen,
+			    (uintmax_t)fs->st_size - mapbase);
 			if (nmaplen != maplen) {
 				munmap(p, maplen);
 				maplen = nmaplen;
@@ -377,7 +415,7 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 		}
 #endif
 		prepare_buf();
-		rcount = read(from_fd, buf, bufsize);
+		rcount = read(from_fd, buf, MIN(wsize, bufsize));
 		if (rcount == 0)
 			break;
 		else if (rcount < 0)
@@ -437,6 +475,7 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 	goto out;
 }
 
+#if 0
 /*
  * Describe the region of the file represented by fd from offset off as a data
  * region, a hole region, or a tail hole.  Return zero on success (besides IO
@@ -616,7 +655,7 @@ cp_copy_file(int from_fd, int to_fd, const struct stat *from_st,
 
  out:
 }
-
+#endif
 
 int
 copy_file(const FTSENT *entp, int dne)
