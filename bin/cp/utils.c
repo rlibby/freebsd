@@ -467,13 +467,11 @@ cp_copy_file(int from_fd, int to_fd, const struct stat *from_st,
 	}
  out:
 #ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
-	if (p != MAP_FAILED)
+	if (p != MAP_FAILED) {
+		/* Leak on failure. */
 		munmap(p, maplen);
-	/*
-	 * XXX Old code failed if mmunmap failed, and had this comment.  Why?
-	 * "Some systems don't unmap on close(2)."
-	 * This is just a leak, right?  Anyway does munmap ever fail?
-	 */
+		p = MAP_FAILED;
+	}
 #endif
 	return (rval);
 
