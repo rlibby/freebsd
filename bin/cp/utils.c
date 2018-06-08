@@ -236,6 +236,7 @@ cp_copy_file(int from_fd, int to_fd, const struct stat *from_st,
 
 #ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
 	p = MAP_FAILED;
+	maplen = 0;
 	can_mmap = from_st != NULL && S_ISREG(from_st->st_mode) &&
 	    from_st->st_size > 0;
 	owe_iseek = false;
