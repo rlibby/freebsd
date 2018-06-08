@@ -266,7 +266,7 @@ cp_copy_file(int from_fd, int to_fd, const struct stat *from_st,
 	wsize = WINDOW_MAX; /* Initial large window optimizes common case. */
 	rval = 0;
 	can_iseek = true;
-	can_oseek = true;
+	can_oseek = false;
 	owe_otrunc = false; /* Have seeked, but need write or ftruncate. */
 
 	if (from_st == NULL) {
@@ -394,7 +394,7 @@ cp_copy_file(int from_fd, int to_fd, const struct stat *from_st,
 			 * When we had an old mapping and the size hasn't
 			 * changed, try MAP_FIXED to optimize the unmap.
 			 */
-			nmaplen = MIN(8 * 1024 * 1024, mapoff + wsize);
+			nmaplen = MIN(MMAP_MAX, mapoff + wsize);
 			nmaplen = MIN(nmaplen,
 			    (uintmax_t)(from_st->st_size - mapbase));
 			if (nmaplen != maplen) {
@@ -478,7 +478,8 @@ cp_copy_file(int from_fd, int to_fd, const struct stat *from_st,
 				next = wpos + (zrend - zrbeg);
 				if (lseek(to_fd, next, SEEK_SET) != next) {
 					can_oseek = false;
-					break;
+					i = zrbeg;
+					continue;
 				}
 				owe_otrunc = true;
 			}
