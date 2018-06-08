@@ -160,46 +160,6 @@ find_zero_region(const char *p, size_t len, size_t blksize, size_t *zrbeg,
 	*zrend = len;
 }
 
-#if 0
-static _Thread_local sigjmp_buf find_zero_region_mmap_env;
-
-static void
-find_zero_region_mmap_sigbus(int sigbus)
-{
-	siglongjmp(find_zero_region_mmap_env, EFAULT);
-}
-
-/*
- * A wrapper for find_zero_region which is safe to use on a file-backed mmap,
- * even if the file is truncated.  In that case, it returns EFAULT.
- *
- * Check ucontext(3), might be better than longjmp?
- */
-static int
-find_zero_region_mmap(const char *p, size_t len, size_t blksize, size_t *zrbeg,
-    size_t *zrend)
-{
-	struct sigaction act = {}, oact;
-	int error;
-
-	act.sa_handler = find_zero_region_mmap_sigbus;
-	act.sa_flags = SA_RESETHAND;
-	act.sa_
-	if (sigaction(SIGBUS, &act, &oact) != 0) {
-		error = errno;
-		goto out;
-	}
-
-	error = sigsetjmp(env, 0);
-	if (error != 0)
-		goto out;
-
-	find_zero_region(p, len, blksize, zrbeg, zrend);
- out:
-	return error;
-}
-#endif
-
 struct cp_status_ctx {
 	const char *from_path;
 	const char *to_path;
