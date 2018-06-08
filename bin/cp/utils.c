@@ -197,9 +197,31 @@ find_zero_region_mmap(const char *p, size_t len, size_t blksize, size_t *zrbeg,
 }
 #endif
 
+struct cp_status_ctx {
+	const char *from_path;
+	const char *to_path;
+	size_t expected;
+};
+
+static void
+cp_status(off_t pos, void *vctx)
+{
+	const struct cp_status_ctx *ctx;
+
+	if (!info)
+		return;
+	info = 0;
+
+	ctx = vctx;
+	(void)fprintf(stderr, "%s -> %s %3d%%\n",
+	    ctx->from_path, ctx->to_path, cp_pct(pos, ctx->expected));
+}
+
+typedef void (*cp_status_cb)(off_t pos, void *vctx);
+
 static int
 do_write(int to_fd, const char *p, size_t wresid, off_t *wtotal,
-    const char *from_path, const char *to_path, off_t expected)
+    cp_status_cb status_cb, void *status_ctx)
 {
 	ssize_t wcount;
 
@@ -208,22 +230,22 @@ do_write(int to_fd, const char *p, size_t wresid, off_t *wtotal,
 		if (wcount <= 0)
 			break;
 		*wtotal += wcount;
-		if (info) {
-			info = 0;
-			(void)fprintf(stderr, "%s -> %s %3d%%\n",
-			    from_path, to_path, cp_pct(*wtotal, expected));
-		}
+		if (status_cb != NULL)
+			status_cb(*wtotal, status_ctx);
 		if ((size_t)wcount >= wresid)
 			break;
 	}
 	return (wcount < 0 || (size_t)wcount != wresid);
 }
 
+/*
+ * Copy a file from from_fd to to_fd.
+ */
 static int
-copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
+cp_copy_file(int from_fd, int to_fd, const struct stat *from_st,
+    const struct stat *to_st, cp_status_cb status_cb, void *status_ctx)
 {
-	struct stat to_st;
-	const struct stat *fs;
+	struct stat from_stat, to_stat;
 	off_t next, rpos, wpos;
 	size_t blksize, wsize;
 	ssize_t rcount;
@@ -236,7 +258,6 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 	bool can_mmap, owe_iseek;
 #endif
 
-	fs = entp->fts_statp;
 	rpos = wpos = 0;
 	blksize = 512;
 	wsize = WINDOW_MAX; /* Initial large window optimizes common case. */
@@ -244,14 +265,21 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 	can_iseek = true;
 	can_oseek = true;
 	owe_otrunc = false; /* Have seeked, but need write or ftruncate. */
+
+	if (from_st == NULL) {
+		if (fstat(from_fd, &from_stat) == 0)
+			from_st = &from_stat;
+	}
+
 #ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
 	p = MAP_FAILED;
-	can_mmap = S_ISREG(fs->st_mode) && fs->st_size > 0;
+	can_mmap = from_st != NULL && S_ISREG(from_st->st_mode) &&
+	    from_st->st_size > 0;
 	owe_iseek = false;
 #endif
 
 	/* Optimize empty files. */
-	if (fs->st_size == 0)
+	if (from_st != NULL && from_st->st_size == 0)
 		goto out;
 
 	/*
@@ -270,11 +298,15 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 	 * buffered data or a gap of zeros in between.
 	 */
 
-	if (fstat(to_fd, &to_st) == 0) {
-		can_oseek = S_ISREG(to_st.st_mode) || S_ISBLK(to_st.st_mode) ||
-		    S_ISCHR(to_st.st_mode);
-		if (to_st.st_blksize > 0)
-			blksize = to_st.st_blksize;
+	if (to_st == NULL) {
+		if (fstat(to_fd, &to_stat) == 0)
+			to_st = &to_stat;
+	}
+	if (to_st != NULL) {
+		can_oseek = S_ISREG(to_st->st_mode) ||
+		    S_ISBLK(to_st->st_mode) || S_ISCHR(to_st->st_mode);
+		if (to_st->st_blksize > 0)
+			blksize = to_st->st_blksize;
 	}
 
 	for (;;) {
@@ -308,12 +340,11 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 		}
 
 		/*
-		 * Adjust the window size;
+		 * Adjust the window size.  The variable-size window helps to
+		 * preserve potential holes without using SEEK_HOLE.
 		 */
 		if (can_oseek) {
-			/*
-			 * Window size sequence 1 1 2 4 8 ... times blksize.
-			 */
+			/* Window size sequence 1 1 2 4 8 ... times blksize. */
 			if (wsize == 0) {
 				wsize = blksize;
 				wstart = true;
@@ -334,8 +365,7 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 			do {
 				if (do_write(to_fd, buf,
 				    MIN(bufsize, (uintmax_t)(rpos - wpos)),
-				    &wpos, entp->fts_path, to.p_path,
-				    fs->st_size))
+				    &wpos, status_cb, status_ctx))
 					goto fail;
 			} while (rpos > wpos);
 			owe_otrunc = false;
@@ -354,19 +384,19 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 		 * write (or SIGBUS if we were to touch it, which we don't).
 		 * When that occurs, fall back to read.
 		 */
-		if (can_mmap && !in_sparse_tail && wpos < fs->st_size) {
+		if (can_mmap && !in_sparse_tail && wpos < from_st->st_size) {
 			mapbase = rounddown(rpos, PAGE_SIZE);
 			mapoff = rpos - mapbase;
-			// XXX explain remapping.
-			// XXX at least on INVARIANTS kernel, no difference
-			// from plain unmap at end.
-			// XXX so during ramp up we could keep a larger mapping
-			// and then advance mapoff ... but is it worth it?
+			/*
+			 * When we had an old mapping and the size hasn't
+			 * changed, try MAP_FIXED to optimize the unmap.
+			 */
 			nmaplen = MIN(8 * 1024 * 1024, mapoff + wsize);
 			nmaplen = MIN(nmaplen,
-			    (uintmax_t)fs->st_size - mapbase);
+			    (uintmax_t)(from_st->st_size - mapbase));
 			if (nmaplen != maplen) {
-				munmap(p, maplen);
+				if (p != MAP_FAILED)
+					munmap(p, maplen);
 				maplen = nmaplen;
 				p = mmap(NULL, maplen, PROT_READ,
 				    MAP_PREFAULT_READ | MAP_SHARED, from_fd,
@@ -381,15 +411,16 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 				continue;
 			}
 			if (do_write(to_fd, p + mapoff, maplen - mapoff, &wpos,
-			    entp->fts_path, to.p_path, fs->st_size)) {
+			    status_cb, status_ctx)) {
 				/*
 				 * The write failed, but it may have partially
 				 * succeeded.  Try to resync the seek offsets.
 				 * If either fd is not seekable, we're stuck.
+				 *
 				 * XXX Avoid this by checking that both are
-				 * seekable before attempting mmap?
-				 * XXX Or do we always get a short write count,
-				 * should we just continue?
+				 * seekable before attempting mmap?  Or do we
+				 * always get a short write count, should we
+				 * just continue?
 				 */
 				wpos = lseek(to_fd, 0, SEEK_CUR);
 				if (wpos < rpos)
@@ -398,13 +429,11 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 			}
 			if (wpos > rpos)
 				owe_otrunc = false;
-			if (wpos == fs->st_size)
+			if (wpos == from_st->st_size)
 				break;
 			rpos = wpos;
 			/* Lazily take care of the seek ourselves. */
 			owe_iseek = true;
-			//munmap(p, maplen);/* TODO MAP_FIXED unmap/remap */
-			//p = MAP_FAILED;
 			continue;
 		}
 		/* Need to seek the input before we issue a read(2). */
@@ -438,7 +467,7 @@ copy_file_real(const FTSENT *entp, int from_fd, int to_fd)
 				zrbeg = zrend = rcount;
 			if (zrbeg > 0) {
 				if (do_write(to_fd, buf + i, zrbeg, &wpos,
-				    entp->fts_path, to.p_path, fs->st_size))
+				    status_cb, status_ctx))
 					goto fail;
 				owe_otrunc = false;
 			}
@@ -561,6 +590,7 @@ cp_describe_region(int fd, off_t off, off_t *end, bool *hole, bool *tail,
 
 /*
  * Copy a file from from_fd to to_fd.
+ * XXX proto
  */
 int
 cp_copy_file(int from_fd, int to_fd, const struct stat *from_st,
@@ -729,7 +759,13 @@ copy_file(const FTSENT *entp, int dne)
 	rval = 0;
 
 	if (!lflag && !sflag) {
-		rval = copy_file_real(entp, from_fd, to_fd);
+		struct cp_status_ctx ctx = {
+			.from_path = entp->fts_path,
+			.to_path = to.p_path,
+			.expected = entp->fts_statp->st_size
+		};
+		rval = cp_copy_file(from_fd, to_fd, entp->fts_statp, NULL,
+		    cp_status, &ctx);
 	} else if (lflag) {
 		if (link(entp->fts_path, to.p_path)) {
 			warn("%s", to.p_path);
