@@ -141,10 +141,13 @@ find_zero_region(const char *p, size_t len, size_t blksize, size_t *zrbeg,
 			end++;
 		} while (end < pend && *end == 0);
 
-		/* Return this region if it was big enough. */
-		// XXX or if len < blksize, we want to be able to get a final
-		// unaligned tail.
-		if ((size_t)(end - beg) >= blksize) {
+		/*
+		 * Return this region if it is at least a block in size, or if
+		 * it is the entire buffer length (which could represent a
+		 * partial block at the tail of a file).
+		 */
+		if ((size_t)(end - beg) >= blksize ||
+		    (size_t)(end - beg) == len) {
 			*zrbeg = beg - p;
 			*zrend = end - p;
 			return;
