@@ -210,7 +210,7 @@ cp_copy_file(int from_fd, int to_fd, const struct stat *from_st,
     const struct stat *to_st, cp_status_cb status_cb, void *status_ctx)
 {
 	struct stat from_stat, to_stat;
-	off_t next, rpos, wpos;
+	off_t next, rpos, wlast, wpos;
 	size_t blksize, wsize;
 	ssize_t rcount;
 	int rval;
@@ -317,25 +317,6 @@ cp_copy_file(int from_fd, int to_fd, const struct stat *from_st,
 			}
 		}
 
-		/*
-		 * Adjust the window size.  The variable-size window helps to
-		 * preserve potential holes without using SEEK_HOLE.
-		 */
-		if (can_oseek) {
-			/* Window size sequence 1 1 2 4 8 ... times blksize. */
-			if (wsize == 0) {
-				wsize = blksize;
-				wstart = true;
-			} else if (wstart) {
-				wstart = false;
-			} else {
-				wsize *= 2;
-			}
-			wsize = MIN(wsize, WINDOW_MAX);
-		} else {
-			wsize = WINDOW_MAX;
-		}
-
 		/* Write residual zero region normally, if oseek failed. */
 		if (rpos > wpos) {
 			prepare_buf();
@@ -348,6 +329,44 @@ cp_copy_file(int from_fd, int to_fd, const struct stat *from_st,
 			} while (rpos > wpos);
 			owe_otrunc = false;
 		}
+
+		/*
+		 * Now rpos and wpos are synced and we are at the start of a
+		 * data region.
+		 *
+		 * Adjust the window size.  The variable-size window helps to
+		 * preserve potential holes without using SEEK_HOLE.
+		 *
+		 * The window size is a power of two times the destination
+		 * block size.  The size sequence is 1 1 2 4 8 ... times the
+		 * block size.
+		 */
+		if (can_oseek) {
+			if (wsize == 0) {
+				wsize = blksize;
+				wstart = true;
+			} else if (wstart) {
+				wstart = false;
+			} else {
+				wsize *= 2;
+			}
+			wsize = MIN(wsize, WINDOW_MAX);
+		} else {
+			/* XXX assumes block size is a power of two. */
+			wsize = WINDOW_MAX;
+		}
+		/*
+		 * The end of the window is clamped so that the window end
+		 * point is a multiple of the window size.  This should allow
+		 * for good clustering.
+		 *
+		 * We track the window end point wlast as inclusive to avoid
+		 * overflow.
+		 */
+		if ((uintmax_t)(OFF_MAX - wpos) < wsize)
+			wlast = OFF_MAX;
+		else
+			wlast = rounddown(wpos + wsize, wsize) - 1;
 
 #ifdef VM_AND_BUFFER_CACHE_SYNCHRONIZED
 		/*
@@ -365,13 +384,14 @@ cp_copy_file(int from_fd, int to_fd, const struct stat *from_st,
 		if (can_mmap && !in_sparse_tail && wpos < from_st->st_size) {
 			mapbase = rounddown(rpos, PAGE_SIZE);
 			mapoff = rpos - mapbase;
+			nmaplen = MIN(MMAP_MAX,
+			    (uintmax_t)(wlast - mapbase + 1));
+			nmaplen = MIN(nmaplen,
+			    (uintmax_t)(from_st->st_size - mapbase));
 			/*
 			 * When we had an old mapping and the size hasn't
 			 * changed, try MAP_FIXED to optimize the unmap.
 			 */
-			nmaplen = MIN(MMAP_MAX, mapoff + wsize);
-			nmaplen = MIN(nmaplen,
-			    (uintmax_t)(from_st->st_size - mapbase));
 			if (nmaplen != maplen) {
 				if (p != MAP_FAILED)
 					munmap(p, maplen);
@@ -422,7 +442,8 @@ cp_copy_file(int from_fd, int to_fd, const struct stat *from_st,
 		}
 #endif
 		prepare_buf();
-		rcount = read(from_fd, buf, MIN(wsize, bufsize));
+		rcount = read(from_fd, buf, MIN(bufsize,
+		    (uintmax_t)(wlast - wpos + 1)));
 		if (rcount == 0)
 			break;
 		else if (rcount < 0)
