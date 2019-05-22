@@ -53,6 +53,7 @@ __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/fail.h>
 #include <sys/kdb.h>
 #include <sys/kernel.h>
 #include <sys/lock.h>
@@ -235,11 +236,7 @@ static SYSCTL_NODE(_debug, OID_AUTO, malloc, CTLFLAG_RD, 0,
  * the caller specifies M_NOWAIT.  If set to 0, no failures are caused.
  */
 #ifdef MALLOC_MAKE_FAILURES
-static int malloc_failure_rate;
-static int malloc_nowait_count;
 static int malloc_failure_count;
-SYSCTL_INT(_debug_malloc, OID_AUTO, failure_rate, CTLFLAG_RWTUN,
-    &malloc_failure_rate, 0, "Every (n) mallocs with M_NOWAIT will fail");
 SYSCTL_INT(_debug_malloc, OID_AUTO, failure_count, CTLFLAG_RD,
     &malloc_failure_count, 0, "Number of imposed M_NOWAIT malloc failures");
 #endif
@@ -506,17 +503,6 @@ malloc_dbg(caddr_t *vap, size_t *sizep, struct malloc_type *mtp,
 		}
 	}
 #endif
-#ifdef MALLOC_MAKE_FAILURES
-	if ((flags & M_NOWAIT) && (malloc_failure_rate != 0)) {
-		atomic_add_int(&malloc_nowait_count, 1);
-		if ((malloc_nowait_count % malloc_failure_rate) == 0) {
-			atomic_add_int(&malloc_failure_count, 1);
-			t_malloc_fail = time_uptime;
-			*vap = NULL;
-			return (EJUSTRETURN);
-		}
-	}
-#endif
 	if (flags & M_WAITOK) {
 		KASSERT(curthread->td_intr_nesting_level == 0,
 		   ("malloc(M_WAITOK) in interrupt context"));
@@ -543,6 +529,22 @@ malloc_dbg(caddr_t *vap, size_t *sizep, struct malloc_type *mtp,
 }
 #endif
 
+static __noinline bool
+malloc_inject_failure(struct malloc_type *mtp)
+{
+
+	if (!uma_dbg_nowait_fail_enabled_malloc(mtp->ks_shortdesc))
+		return (false);
+
+#ifdef MALLOC_MAKE_FAILURES
+	atomic_add_int(&malloc_failure_count, 1);
+#endif
+	uma_dbg_nowait_fail_record(mtp->ks_shortdesc, true);
+	t_malloc_fail = time_uptime;
+
+	return (true);
+}
+
 /*
  *	malloc:
  *
@@ -560,6 +562,11 @@ void *
 #if defined(DEBUG_REDZONE)
 	unsigned long osize = size;
 #endif
+
+	KFAIL_POINT_CODE_COND(DEBUG_FP, malloc, flags & M_NOWAIT, 0, {
+		if (malloc_inject_failure(mtp))
+			return (NULL);
+	});
 
 #ifdef MALLOC_DEBUG
 	va = NULL;
@@ -647,6 +654,12 @@ malloc_domainset(size_t size, struct malloc_type *mtp, struct domainset *ds,
 	struct vm_domainset_iter di;
 	void *ret;
 	int domain;
+
+	KFAIL_POINT_CODE_COND(DEBUG_FP, malloc_domainset, flags & M_NOWAIT, 0,
+	    {
+		if (malloc_inject_failure(mtp))
+			return (NULL);
+	});
 
 	vm_domainset_iter_policy_init(&di, ds, &domain, &flags);
 	do {

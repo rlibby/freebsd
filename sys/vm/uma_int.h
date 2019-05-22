@@ -493,6 +493,11 @@ void uma_small_free(void *mem, vm_size_t size, uint8_t flags);
 
 /* Set a global soft limit on UMA managed memory. */
 void uma_set_limit(unsigned long limit);
+
+bool uma_dbg_nowait_fail_enabled_malloc(const char *name);
+bool uma_dbg_nowait_fail_enabled_zalloc(const char *name);
+void uma_dbg_nowait_fail_record(const char *name, bool is_malloc);
+extern bool g_uma_dbg_nowait_fail_zalloc_ignore_malloc;
 #endif /* _KERNEL */
 
 #endif /* VM_UMA_INT_H */
