@@ -95,7 +95,7 @@ __FBSDID("$FreeBSD$");
 #endif
 
 static struct igmp_ifsoftc *
-		igi_alloc_locked(struct ifnet *);
+		igi_alloc(struct ifnet *);
 static void	igi_delete_locked(const struct ifnet *);
 static void	igmp_dispatch_queue(struct mbufq *, int, const int);
 static void	igmp_fasttimo_vnet(void);
@@ -554,12 +554,12 @@ igmp_domifattach(struct ifnet *ifp)
 	CTR3(KTR_IGMPV3, "%s: called for ifp %p(%s)",
 	    __func__, ifp, ifp->if_xname);
 
-	IGMP_LOCK();
-
-	igi = igi_alloc_locked(ifp);
+	igi = igi_alloc(ifp);
 	if (!(ifp->if_flags & IFF_MULTICAST))
 		igi->igi_flags |= IGIF_SILENT;
 
+	IGMP_LOCK();
+	LIST_INSERT_HEAD(&V_igi_head, igi, igi_link);
 	IGMP_UNLOCK();
 
 	return (igi);
@@ -569,15 +569,13 @@ igmp_domifattach(struct ifnet *ifp)
  * VIMAGE: assume curvnet set by caller.
  */
 static struct igmp_ifsoftc *
-igi_alloc_locked(/*const*/ struct ifnet *ifp)
+igi_alloc(/*const*/ struct ifnet *ifp)
 {
 	struct igmp_ifsoftc *igi;
 
-	IGMP_LOCK_ASSERT();
+	IGMP_UNLOCK_ASSERT();
 
-	igi = malloc(sizeof(struct igmp_ifsoftc), M_IGMP, M_NOWAIT|M_ZERO);
-	if (igi == NULL)
-		goto out;
+	igi = malloc(sizeof(struct igmp_ifsoftc), M_IGMP, M_WAITOK|M_ZERO);
 
 	igi->igi_ifp = ifp;
 	igi->igi_version = V_igmp_default_version;
@@ -588,12 +586,9 @@ igi_alloc_locked(/*const*/ struct ifnet *ifp)
 	igi->igi_uri = IGMP_URI_INIT;
 	mbufq_init(&igi->igi_gq, IGMP_MAX_RESPONSE_PACKETS);
 
-	LIST_INSERT_HEAD(&V_igi_head, igi, igi_link);
-
 	CTR2(KTR_IGMPV3, "allocate igmp_ifsoftc for ifp %p(%s)",
 	     ifp, ifp->if_xname);
 
-out:
 	return (igi);
 }
 
