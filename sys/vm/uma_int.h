@@ -34,6 +34,7 @@
 #include <sys/_bitset.h>
 #include <sys/_domainset.h>
 #include <sys/_task.h>
+#include <sys/fail.h>
 
 /* 
  * This file includes definitions, structures, prototypes, and inlines that
@@ -493,6 +494,21 @@ void uma_small_free(void *mem, vm_size_t size, uint8_t flags);
 
 /* Set a global soft limit on UMA managed memory. */
 void uma_set_limit(unsigned long limit);
+
+#ifdef MALLOC_MAKE_FAILURES
+bool uma_dbg_nowait_fail_enabled(const char *name);
+void uma_dbg_nowait_fail_record(const char *name);
+extern bool g_uma_dbg_nowait_fail_zalloc_ignore_malloc;
+KFAIL_POINT_DECLARE(mnowait);
+#define	MALLOC_NOWAIT_FAIL_POINT(flags, code...)			\
+	KFAIL_POINT_EVAL(mnowait,					\
+		if (((flags) & M_NOWAIT) != 0) {			\
+			code;						\
+		}							\
+	)
+#else
+#define	MALLOC_NOWAIT_FAIL_POINT(flags, code...)
+#endif /* MALLOC_MAKE_FAILURES */
 #endif /* _KERNEL */
 
 #endif /* VM_UMA_INT_H */

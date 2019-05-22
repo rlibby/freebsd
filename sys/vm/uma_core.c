@@ -61,6 +61,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/bitset.h>
 #include <sys/domainset.h>
 #include <sys/eventhandler.h>
+#include <sys/fail.h>
 #include <sys/kernel.h>
 #include <sys/types.h>
 #include <sys/limits.h>
@@ -2335,6 +2336,23 @@ uma_zfree_pcpu_arg(uma_zone_t zone, void *item, void *udata)
 	uma_zfree_arg(zone, item, udata);
 }
 
+#ifdef MALLOC_MAKE_FAILURES
+static __noinline bool
+zalloc_inject_failure(uma_zone_t zone)
+{
+
+	if (((zone->uz_flags & UMA_ZONE_MALLOC) != 0 &&
+	     g_uma_dbg_nowait_fail_zalloc_ignore_malloc) ||
+	    !uma_dbg_nowait_fail_enabled(zone->uz_name))
+		return (false);
+
+	counter_u64_add(zone->uz_fails, 1);
+	uma_dbg_nowait_fail_record(zone->uz_name);
+
+	return (true);
+}
+#endif
+
 /* See uma.h */
 void *
 uma_zalloc_arg(uma_zone_t zone, void *udata, int flags)
@@ -2365,6 +2383,11 @@ uma_zalloc_arg(uma_zone_t zone, void *udata, int flags)
 	if (zone->uz_flags & UMA_ZONE_PCPU)
 		KASSERT((flags & M_ZERO) == 0, ("allocating from a pcpu zone "
 		    "with M_ZERO passed"));
+
+	MALLOC_NOWAIT_FAIL_POINT(flags,
+		if (zalloc_inject_failure(zone))
+			return (NULL);
+	);
 
 #ifdef DEBUG_MEMGUARD
 	if (memguard_cmp_zone(zone)) {
@@ -2603,6 +2626,11 @@ uma_zalloc_domain(uma_zone_t zone, void *udata, int domain, int flags)
 	}
 	KASSERT(curthread->td_critnest == 0 || SCHEDULER_STOPPED(),
 	    ("uma_zalloc_domain: called with spinlock or critical section held"));
+
+	MALLOC_NOWAIT_FAIL_POINT(flags,
+		if (zalloc_inject_failure(zone))
+			return (NULL);
+	);
 
 	return (zone_alloc_item(zone, udata, domain, flags));
 }
