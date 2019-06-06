@@ -105,7 +105,7 @@ __FBSDID("$FreeBSD$");
 #endif
 
 static struct mld_ifsoftc *
-		mli_alloc_locked(struct ifnet *);
+		mli_alloc(struct ifnet *);
 static void	mli_delete_locked(const struct ifnet *);
 static void	mld_dispatch_packet(struct mbuf *);
 static void	mld_dispatch_queue(struct mbufq *, int);
@@ -480,14 +480,14 @@ mld_domifattach(struct ifnet *ifp)
 	CTR3(KTR_MLD, "%s: called for ifp %p(%s)",
 	    __func__, ifp, if_name(ifp));
 
-	MLD_LOCK();
-
-	mli = mli_alloc_locked(ifp);
+	mli = mli_alloc(ifp);
 	if (!(ifp->if_flags & IFF_MULTICAST))
 		mli->mli_flags |= MLIF_SILENT;
 	if (mld_use_allow)
 		mli->mli_flags |= MLIF_USEALLOW;
 
+	MLD_LOCK();
+	LIST_INSERT_HEAD(&V_mli_head, mli, mli_link);
 	MLD_UNLOCK();
 
 	return (mli);
@@ -497,15 +497,13 @@ mld_domifattach(struct ifnet *ifp)
  * VIMAGE: assume curvnet set by caller.
  */
 static struct mld_ifsoftc *
-mli_alloc_locked(/*const*/ struct ifnet *ifp)
+mli_alloc(/*const*/ struct ifnet *ifp)
 {
 	struct mld_ifsoftc *mli;
 
-	MLD_LOCK_ASSERT();
+	MLD_UNLOCK_ASSERT();
 
-	mli = malloc(sizeof(struct mld_ifsoftc), M_MLD, M_NOWAIT|M_ZERO);
-	if (mli == NULL)
-		goto out;
+	mli = malloc(sizeof(struct mld_ifsoftc), M_MLD, M_WAITOK|M_ZERO);
 
 	mli->mli_ifp = ifp;
 	mli->mli_version = MLD_VERSION_2;
@@ -516,12 +514,9 @@ mli_alloc_locked(/*const*/ struct ifnet *ifp)
 	mli->mli_uri = MLD_URI_INIT;
 	mbufq_init(&mli->mli_gq, MLD_MAX_RESPONSE_PACKETS);
 
-	LIST_INSERT_HEAD(&V_mli_head, mli, mli_link);
-
 	CTR2(KTR_MLD, "allocate mld_ifsoftc for ifp %p(%s)",
 	     ifp, if_name(ifp));
 
-out:
 	return (mli);
 }
 
