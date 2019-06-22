@@ -1314,7 +1314,9 @@ in_joingroup_locked(struct ifnet *ifp, const struct in_addr *gina,
 	if (error) {
 
 		CTR2(KTR_IGMPV3, "%s: dropping ref on %p", __func__, inm);
+		IF_ADDR_WLOCK(ifp);
 		inm_release_deferred(inm);
+		IF_ADDR_WUNLOCK(ifp);
 	} else {
 		*pinm = inm;
 	}
@@ -2328,7 +2330,9 @@ out_imo_free:
 		inm = imo->imo_membership[idx];
 		if (inm != NULL) {
 			IN_MULTI_LIST_LOCK();
+			IF_ADDR_WLOCK(ifp);
 			inm_release_deferred(inm);
+			IF_ADDR_WUNLOCK(ifp);
 			IN_MULTI_LIST_UNLOCK();
 		}
 		imo->imo_membership[idx] = NULL;
