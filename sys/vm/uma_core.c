@@ -94,12 +94,9 @@ __FBSDID("$FreeBSD$");
 #include <vm/uma.h>
 #include <vm/uma_int.h>
 #include <vm/uma_dbg.h>
+#include <vm/memguard.h>
 
 #include <ddb/ddb.h>
-
-#ifdef DEBUG_MEMGUARD
-#include <vm/memguard.h>
-#endif
 
 /*
  * This is the zone and keg from which all zones are spawned.
@@ -1773,6 +1770,11 @@ zone_ctor(void *mem, int size, void *udata, int flags)
 		zone->uz_fails = EARLY_COUNTER;
 	}
 
+#ifdef INVARIANTS
+	if (arg->uminit == trash_init && arg->fini == trash_fini)
+		zone->uz_flags |= UMA_ZFLAG_TRASH;
+#endif
+
 	/*
 	 * This is a pure cache zone, no kegs.
 	 */
@@ -2201,9 +2203,7 @@ uma_zcreate(const char *name, size_t size, uma_ctor ctor, uma_dtor dtor,
 	 * memory use after free.
 	 */
 	if ((!(flags & (UMA_ZONE_ZINIT | UMA_ZONE_NOFREE))) &&
-	    ctor == NULL && dtor == NULL && uminit == NULL && fini == NULL) {
-		args.ctor = trash_ctor;
-		args.dtor = trash_dtor;
+	    uminit == NULL && fini == NULL) {
 		args.uminit = trash_init;
 		args.fini = trash_fini;
 	}
@@ -2353,6 +2353,62 @@ zalloc_inject_failure(uma_zone_t zone)
 }
 #endif
 
+static inline int
+uma_zctor(uma_zone_t zone, void *mem, void *arg, int flags)
+{
+	int ret;
+#ifdef INVARIANTS
+	bool skipdbg;
+
+	skipdbg = uma_dbg_zskip(zone, mem);
+
+	if (!skipdbg && (zone->uz_flags & UMA_ZFLAG_TRASH) != 0 &&
+	    zone->uz_ctor != trash_ctor)
+		trash_ctor(mem, zone->uz_size, arg, flags);
+#endif
+	ret = 0;
+	if (zone->uz_ctor != NULL)
+		ret = zone->uz_ctor(mem, zone->uz_size, arg, flags);
+
+	if (ret == 0 && !is_memguard_addr(mem)) {
+#ifdef INVARIANTS
+		if (!skipdbg)
+			uma_dbg_alloc(zone, NULL, mem);
+#endif
+		if ((flags & M_ZERO) != 0)
+			uma_zero_item(mem, zone);
+	}
+
+	return (ret);
+}
+
+static inline void
+uma_zdtor(uma_zone_t zone, void *mem, void *arg, enum zfreeskip skip)
+{
+#ifdef INVARIANTS
+	bool skipdbg;
+
+	skipdbg = uma_dbg_zskip(zone, mem);
+
+	if (skip == SKIP_NONE && !skipdbg && !is_memguard_addr(mem)) {
+		if ((zone->uz_flags & UMA_ZONE_MALLOC) != 0)
+			uma_dbg_free(zone, arg, mem);
+		else
+			uma_dbg_free(zone, NULL, mem);
+	}
+#endif
+
+	if (skip < SKIP_DTOR) {
+		if (zone->uz_dtor != NULL)
+			zone->uz_dtor(mem, zone->uz_size, arg);
+#ifdef INVARIANTS
+		if (!skipdbg && (zone->uz_flags & UMA_ZFLAG_TRASH) != 0 &&
+		    zone->uz_dtor != trash_dtor)
+			trash_dtor(mem, zone->uz_size, arg);
+#endif
+	}
+}
+
 /* See uma.h */
 void *
 uma_zalloc_arg(uma_zone_t zone, void *udata, int flags)
@@ -2362,9 +2418,6 @@ uma_zalloc_arg(uma_zone_t zone, void *udata, int flags)
 	uma_cache_t cache;
 	void *item;
 	int cpu, domain, lockfail, maxbucket;
-#ifdef INVARIANTS
-	bool skipdbg;
-#endif
 
 	/* Enable entropy collection for RANDOM_ENABLE_UMA kernel option */
 	random_harvest_fast_uma(&zone, sizeof(zone), RANDOM_UMA);
@@ -2396,9 +2449,7 @@ uma_zalloc_arg(uma_zone_t zone, void *udata, int flags)
 			if (zone->uz_init != NULL &&
 			    zone->uz_init(item, zone->uz_size, flags) != 0)
 				return (NULL);
-			if (zone->uz_ctor != NULL &&
-			    zone->uz_ctor(item, zone->uz_size, udata,
-			    flags) != 0) {
+			if (uma_zctor(zone, item, udata, flags) != 0) {
 			    	zone->uz_fini(item, zone->uz_size);
 				return (NULL);
 			}
@@ -2434,25 +2485,12 @@ zalloc_start:
 		KASSERT(item != NULL, ("uma_zalloc: Bucket pointer mangled."));
 		cache->uc_allocs++;
 		critical_exit();
-#ifdef INVARIANTS
-		skipdbg = uma_dbg_zskip(zone, item);
-#endif
-		if (zone->uz_ctor != NULL &&
-#ifdef INVARIANTS
-		    (!skipdbg || zone->uz_ctor != trash_ctor ||
-		    zone->uz_dtor != trash_dtor) &&
-#endif
-		    zone->uz_ctor(item, zone->uz_size, udata, flags) != 0) {
+
+		if (uma_zctor(zone, item, udata, flags) != 0) {
 			counter_u64_add(zone->uz_fails, 1);
 			zone_free_item(zone, item, udata, SKIP_DTOR | SKIP_CNT);
 			return (NULL);
 		}
-#ifdef INVARIANTS
-		if (!skipdbg)
-			uma_dbg_alloc(zone, NULL, item);
-#endif
-		if (flags & M_ZERO)
-			uma_zero_item(item, zone);
 		return (item);
 	}
 
@@ -2941,9 +2979,6 @@ static void *
 zone_alloc_item_locked(uma_zone_t zone, void *udata, int domain, int flags)
 {
 	void *item;
-#ifdef INVARIANTS
-	bool skipdbg;
-#endif
 
 	ZONE_LOCK_ASSERT(zone);
 
@@ -2977,9 +3012,6 @@ zone_alloc_item_locked(uma_zone_t zone, void *udata, int domain, int flags)
 	if (zone->uz_import(zone->uz_arg, &item, 1, domain, flags) != 1)
 		goto fail;
 
-#ifdef INVARIANTS
-	skipdbg = uma_dbg_zskip(zone, item);
-#endif
 	/*
 	 * We have to call both the zone's init (not the keg's init)
 	 * and the zone's ctor.  This is because the item is going from
@@ -2992,21 +3024,10 @@ zone_alloc_item_locked(uma_zone_t zone, void *udata, int domain, int flags)
 			goto fail;
 		}
 	}
-	if (zone->uz_ctor != NULL &&
-#ifdef INVARIANTS
-	    (!skipdbg || zone->uz_ctor != trash_ctor ||
-	    zone->uz_dtor != trash_dtor) &&
-#endif
-	    zone->uz_ctor(item, zone->uz_size, udata, flags) != 0) {
+	if (uma_zctor(zone, item, udata, flags) != 0) {
 		zone_free_item(zone, item, udata, SKIP_DTOR | SKIP_CNT);
 		goto fail;
 	}
-#ifdef INVARIANTS
-	if (!skipdbg)
-		uma_dbg_alloc(zone, NULL, item);
-#endif
-	if (flags & M_ZERO)
-		uma_zero_item(item, zone);
 
 	counter_u64_add(zone->uz_allocs, 1);
 	CTR3(KTR_UMA, "zone_alloc_item item %p from %s(%p)", item,
@@ -3035,9 +3056,6 @@ uma_zfree_arg(uma_zone_t zone, void *item, void *udata)
 	uma_zone_domain_t zdom;
 	int cpu, domain;
 	bool lockfail;
-#ifdef INVARIANTS
-	bool skipdbg;
-#endif
 
 	/* Enable entropy collection for RANDOM_ENABLE_UMA kernel option */
 	random_harvest_fast_uma(&zone, sizeof(zone), RANDOM_UMA);
@@ -3051,30 +3069,15 @@ uma_zfree_arg(uma_zone_t zone, void *item, void *udata)
         /* uma_zfree(..., NULL) does nothing, to match free(9). */
         if (item == NULL)
                 return;
+	uma_zdtor(zone, item, udata, SKIP_NONE);
 #ifdef DEBUG_MEMGUARD
 	if (is_memguard_addr(item)) {
-		if (zone->uz_dtor != NULL)
-			zone->uz_dtor(item, zone->uz_size, udata);
 		if (zone->uz_fini != NULL)
 			zone->uz_fini(item, zone->uz_size);
 		memguard_free(item);
 		return;
 	}
 #endif
-#ifdef INVARIANTS
-	skipdbg = uma_dbg_zskip(zone, item);
-	if (skipdbg == false) {
-		if (zone->uz_flags & UMA_ZONE_MALLOC)
-			uma_dbg_free(zone, udata, item);
-		else
-			uma_dbg_free(zone, NULL, item);
-	}
-	if (zone->uz_dtor != NULL && (!skipdbg ||
-	    zone->uz_dtor != trash_dtor || zone->uz_ctor != trash_ctor))
-#else
-	if (zone->uz_dtor != NULL)
-#endif
-		zone->uz_dtor(item, zone->uz_size, udata);
 
 	/*
 	 * The race here is acceptable.  If we miss it we'll just have to wait
@@ -3304,24 +3307,8 @@ zone_release(uma_zone_t zone, void **bucket, int cnt)
 static void
 zone_free_item(uma_zone_t zone, void *item, void *udata, enum zfreeskip skip)
 {
-#ifdef INVARIANTS
-	bool skipdbg;
 
-	skipdbg = uma_dbg_zskip(zone, item);
-	if (skip == SKIP_NONE && !skipdbg) {
-		if (zone->uz_flags & UMA_ZONE_MALLOC)
-			uma_dbg_free(zone, udata, item);
-		else
-			uma_dbg_free(zone, NULL, item);
-	}
-
-	if (skip < SKIP_DTOR && zone->uz_dtor != NULL &&
-	    (!skipdbg || zone->uz_dtor != trash_dtor ||
-	    zone->uz_ctor != trash_ctor))
-#else
-	if (skip < SKIP_DTOR && zone->uz_dtor != NULL)
-#endif
-		zone->uz_dtor(item, zone->uz_size, udata);
+	uma_zdtor(zone, item, udata, skip);
 
 	if (skip < SKIP_FINI && zone->uz_fini)
 		zone->uz_fini(item, zone->uz_size);
