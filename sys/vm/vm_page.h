@@ -235,13 +235,14 @@ struct vm_page {
 			u_long v;
 		} memguard;
 		struct {
-			void *slab;
 			void *zone;
+			void *slab;
 		} uma;
 	} plinks;
 	TAILQ_ENTRY(vm_page) listq;	/* pages in same object (O) */
 	vm_object_t object;		/* which object am I in (O) */
 	vm_pindex_t pindex;		/* offset into object (O,P) */
+	char p_opaque_end[0];		/* end of private union space */
 	vm_paddr_t phys_addr;		/* physical address of page (C) */
 	struct md_page md;		/* machine dependent stuff */
 	u_int ref_count;		/* page references (A) */
@@ -455,6 +456,7 @@ extern struct mtx_padalign pa_lock[];
 #define	PG_ZERO		0x04		/* page is zeroed */
 #define	PG_MARKER	0x08		/* special queue marker page */
 #define	PG_NODUMP	0x10		/* don't include this page in a dump */
+#define	PG_OPAQUE	0x20		/* private union up to p_opaque_end */
 
 /*
  * Misc constants.

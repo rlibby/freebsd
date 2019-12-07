@@ -2476,7 +2476,7 @@ vm_page_scan_contig(u_long npages, vm_page_t m_start, vm_page_t m_end,
 		vm_page_change_lock(m, &m_mtx);
 		m_inc = 1;
 retry:
-		if (vm_page_wired(m))
+		if ((m->flags & PG_OPAQUE) != 0 || vm_page_wired(m))
 			run_ext = 0;
 #if VM_NRESERVLEVEL > 0
 		else if ((level = vm_reserv_level(m)) >= 0 &&
