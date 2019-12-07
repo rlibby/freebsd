@@ -1390,6 +1390,12 @@ keg_free_slab(uma_keg_t keg, uma_slab_t slab, int start)
 	if (keg->uk_flags & UMA_ZFLAG_OFFPAGE)
 		zone_free_item(slabzone(keg->uk_ipers), slab_tohashslab(slab),
 		    NULL, SKIP_NONE);
+	else if (keg->uk_flags & UMA_ZFLAG_SLABVMPAGE) {
+		vm_page_t m;
+		m = (vm_page_t)slab_topageslab(slab);
+		bzero(m, offsetof(struct vm_page, p_opaque_end));
+		m->flags &= ~PG_OPAQUE;
+	}
 	keg->uk_freef(mem, PAGE_SIZE * keg->uk_ppera, flags);
 	uma_total_dec(PAGE_SIZE * keg->uk_ppera);
 }
@@ -1536,7 +1542,9 @@ keg_alloc_slab(uma_keg_t keg, uma_zone_t zone, int domain, int flags,
 {
 	uma_domain_t dom;
 	uma_alloc allocf;
+	uma_page_slab_t ups;
 	uma_slab_t slab;
+	vm_page_t m;
 	unsigned long size;
 	uint8_t *mem;
 	uint8_t sflags;
@@ -1548,6 +1556,7 @@ keg_alloc_slab(uma_keg_t keg, uma_zone_t zone, int domain, int flags,
 	allocf = keg->uk_allocf;
 	slab = NULL;
 	mem = NULL;
+	ups = NULL;
 	if (keg->uk_flags & UMA_ZFLAG_OFFPAGE) {
 		uma_hash_slab_t hslab;
 		hslab = zone_alloc_item(slabzone(keg->uk_ipers), NULL,
@@ -1588,15 +1597,30 @@ keg_alloc_slab(uma_keg_t keg, uma_zone_t zone, int domain, int flags,
 		domain = 0;
 
 	/* Point the slab into the allocated memory */
-	if (!(keg->uk_flags & UMA_ZFLAG_OFFPAGE))
-		slab = (uma_slab_t )(mem + keg->uk_pgoff);
-	else
+	if (keg->uk_flags & UMA_ZFLAG_OFFPAGE) {
 		slab_tohashslab(slab)->uhs_data = mem;
+	} else if (keg->uk_flags & UMA_ZFLAG_SLABVMPAGE) {
+		m = PHYS_TO_VM_PAGE(pmap_kextract((vm_offset_t)mem));
+		KASSERT(m->object == NULL,
+		    ("%s: cannot embed slab, page %p has object %p", __func__,
+		     m, m->object));
+		m->flags |= PG_OPAQUE;
+		ups = (uma_page_slab_t)m;
+		ups->ups_zone = zone;
+		ups->ups_data = mem;
+		slab = &ups->ups_slab;
+	} else {
+		slab = (uma_slab_t )(mem + keg->uk_pgoff);
+	}
 
-	if (keg->uk_flags & UMA_ZFLAG_VTOSLAB)
-		for (i = 0; i < keg->uk_ppera; i++)
+	if (keg->uk_flags & UMA_ZFLAG_VTOSLAB) {
+		i = 0;
+		if (ups != NULL)
+			i++;
+		for (; i < keg->uk_ppera; i++)
 			vsetzoneslab((vm_offset_t)mem + (i * PAGE_SIZE),
 			    zone, slab);
+	}
 
 	slab->us_freecount = keg->uk_ipers;
 	slab->us_flags = sflags;
@@ -1957,20 +1981,29 @@ slab_sizeof(int nitems)
 #define	UMA_PCT_FIXPT(pct)	UMA_FRAC_FIXPT((pct), 100)
 #define	UMA_MIN_EFF	UMA_PCT_FIXPT(100 - UMA_MAX_WASTE)
 
+#define PAGESLAB_MAX_ITEMS						\
+	(MIN(SLAB_MAX_SETSIZE, MAX(0,					\
+	 offsetof(struct vm_page, p_opaque_end) -			\
+	 offsetof(struct uma_page_slab, ups_slab.us_free)) /		\
+	 BITSET_SIZE(1)	/ SLAB_BITSETS * BITSET_SIZE(1) * NBBY))
+
 /*
- * Compute the number of items that will fit in a slab.  If hdr is true, the
+ * Compute the number of items that will fit in a slab.
+ * XXX STALE If hdr is true, the
  * item count may be limited to provide space in the slab for an inline slab
  * header.  Otherwise, all slab space will be provided for item storage.
  */
 static u_int
-slab_ipers_hdr(u_int size, u_int rsize, u_int slabsize, bool hdr)
+slab_ipers_fmt(u_int size, u_int rsize, u_int slabsize, u_int fmt)
 {
 	u_int ipers;
 	u_int padpi;
+	bool hdr;
 
 	/* The padding between items is not needed after the last item. */
 	padpi = rsize - size;
 
+	hdr = (fmt & (UMA_ZFLAG_OFFPAGE | UMA_ZFLAG_SLABVMPAGE)) == 0;
 	if (hdr) {
 		/*
 		 * Start with the maximum item count and remove items until
@@ -1983,7 +2016,11 @@ slab_ipers_hdr(u_int size, u_int rsize, u_int slabsize, bool hdr)
 		    ipers--)
 			continue;
 	} else {
-		ipers = MIN((slabsize + padpi) / rsize, SLAB_MAX_SETSIZE);
+		ipers = (slabsize + padpi) / rsize;
+		if (fmt & UMA_ZFLAG_SLABVMPAGE)
+			ipers = MIN(ipers, PAGESLAB_MAX_ITEMS);
+		else
+			ipers = MIN(ipers, SLAB_MAX_SETSIZE);
 	}
 
 	return (ipers);
@@ -2011,8 +2048,7 @@ keg_layout_one(uma_keg_t keg, u_int rsize, u_int slabsize, u_int fmt,
 		kl->slabsize += PAGE_SIZE;
 	}
 
-	kl->ipers = slab_ipers_hdr(keg->uk_size, rsize, kl->slabsize,
-	    (fmt & UMA_ZFLAG_OFFPAGE) == 0);
+	kl->ipers = slab_ipers_fmt(keg->uk_size, rsize, kl->slabsize, fmt);
 
 	/* Account for memory used by an offpage slab header. */
 	total = kl->slabsize;
@@ -2036,7 +2072,7 @@ static void
 keg_layout(uma_keg_t keg)
 {
 	struct keg_layout_result kl = {}, kl_tmp;
-	u_int fmts[2];
+	u_int fmts[3];
 	u_int alignsize;
 	u_int nfmt;
 	u_int pages;
@@ -2094,7 +2130,23 @@ keg_layout(uma_keg_t keg)
 	if ((keg->uk_flags & (UMA_ZONE_NOTOUCH | UMA_ZONE_PCPU)) == 0)
 		fmts[nfmt++] = 0;
 
-	/* TODO: vm_page-embedded slab. */
+#ifdef UMA_MD_SMALL_ALLOC
+	/*
+	 * Would a slab embedded in the vm_page allow more items?  We can
+	 * only embed the slab in the vm_page when we have complete control
+	 * over the page.  In particular, it can't belong to an object.
+	 * This effectively means it needs to come from uma_small_alloc.
+	 */
+	/*
+	 * XXX need to check and describe rationale for bootstrap
+	 * issues... maybe it's okay now?
+	 *
+	 * XXX how to guarantee the last part of the comment above vs
+	 * uma_zone_set_allocf ... or is it just via NOTPAGE?
+	 */
+	if ((keg->uk_flags & UMA_ZONE_NOTPAGE) == 0 && booted >= BOOT_KVA)
+		fmts[nfmt++] = UMA_ZFLAG_SLABVMPAGE | UMA_ZFLAG_VTOSLAB;
+#endif
 
 	/*
 	 * We can't do OFFPAGE if we're internal or if we've been
@@ -2134,6 +2186,10 @@ keg_layout(uma_keg_t keg)
 			if ((fmts[j] & UMA_ZFLAG_INTERNAL) != 0 &&
 			    kl.ipers > 0)
 				continue;
+			/* Only if we haven't met the minimum efficiency. */
+			if ((fmts[j] & UMA_ZFLAG_OFFPAGE) != 0 &&
+			    kl.eff >= UMA_MIN_EFF)
+				continue;
 
 			keg_layout_one(keg, rsize, slabsize, fmts[j], &kl_tmp);
 			if (kl_tmp.eff <= kl.eff)
@@ -2145,10 +2201,6 @@ keg_layout(uma_keg_t keg)
 			    "(ipers %u * rsize %u) / slabsize %#x = %u%% eff",
 			    keg->uk_name, kl.format, kl.ipers, rsize,
 			    kl.slabsize, UMA_FIXPT_PCT(kl.eff));
-
-			/* Stop when we reach the minimum efficiency. */
-			if (kl.eff >= UMA_MIN_EFF)
-				break;
 		}
 
 		if (kl.eff >= UMA_MIN_EFF || !multipage_slabs ||

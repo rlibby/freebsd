@@ -166,12 +166,14 @@
 #define	UMA_ZFLAG_BUCKET	0x10000000	/* Bucket zone. */
 #define	UMA_ZFLAG_INTERNAL	0x20000000	/* No offpage no PCPU. */
 #define	UMA_ZFLAG_TRASH		0x40000000	/* Add trash ctor/dtor. */
+#define	UMA_ZFLAG_SLABVMPAGE	0x80000000	/* XXX */
 
 #define	UMA_ZFLAG_INHERIT						\
     (UMA_ZFLAG_OFFPAGE | UMA_ZFLAG_HASH | UMA_ZFLAG_VTOSLAB |		\
      UMA_ZFLAG_BUCKET | UMA_ZFLAG_INTERNAL)
 
 #define	PRINT_UMA_ZFLAGS	"\20"	\
+    "\40SLABVMPAGE"			\
     "\37TRASH"				\
     "\36INTERNAL"			\
     "\35BUCKET"				\
@@ -368,6 +370,20 @@ struct uma_keg {
 typedef struct uma_keg	* uma_keg_t;
 
 /*
+ * XXX enhance comment, mention flags.
+ *
+ * The slab has several possible layouts.  A layout is selected with the
+ * goal of minimizing internal fragmentation.  The slab layout is also
+ * restricted when UMA is not allowed to access the actual backing memory.
+ * The possible layouts are:
+ *  - on-page: The slab structure is embedded in the memory backing the
+ *    client allocation, at the end.
+ *  - off-page: The slab structure is allocated from the slabzone.
+ *  - vm_page-embedded: The slab structure is embedded in the vm_page
+ *    itself.
+ */
+
+/*
  * Free bits per-slab.
  */
 #define	SLAB_MAX_SETSIZE	(PAGE_SIZE / UMA_SMALLEST_UNIT)
@@ -411,11 +427,28 @@ slab_tohashslab(uma_slab_t slab)
 	return (__containerof(slab, struct uma_hash_slab, uhs_slab));
 }
 
+struct uma_page_slab {
+	uma_zone_t		ups_zone;
+	/* XXX just use DMAP when PMAP_HAS_DMAP and doing single page? */
+	uint8_t			*ups_data;	/* First item */
+	struct uma_slab		ups_slab;	/* Must be last. */
+};
+
+typedef struct uma_page_slab * uma_page_slab_t;
+
+static inline uma_page_slab_t
+slab_topageslab(uma_slab_t slab)
+{
+
+	return (__containerof(slab, struct uma_page_slab, ups_slab));
+}
+
 static inline void *
 slab_data(uma_slab_t slab, uma_keg_t keg)
 {
-
-	if ((keg->uk_flags & UMA_ZFLAG_OFFPAGE) == 0)
+	if ((keg->uk_flags & UMA_ZFLAG_SLABVMPAGE) != 0)
+		return slab_topageslab(slab)->ups_data;
+	else if ((keg->uk_flags & UMA_ZFLAG_OFFPAGE) == 0)
 		return ((void *)((uintptr_t)slab - keg->uk_pgoff));
 	else
 		return (slab_tohashslab(slab)->uhs_data);
@@ -621,7 +654,10 @@ vtoslab(vm_offset_t va)
 	vm_page_t p;
 
 	p = PHYS_TO_VM_PAGE(pmap_kextract(va));
-	return (p->plinks.uma.slab);
+	if ((p->flags & PG_OPAQUE) != 0)
+		return (&((uma_page_slab_t)p)->ups_slab);
+	else
+		return (p->plinks.uma.slab);
 }
 
 static __inline void
@@ -630,8 +666,13 @@ vtozoneslab(vm_offset_t va, uma_zone_t *zone, uma_slab_t *slab)
 	vm_page_t p;
 
 	p = PHYS_TO_VM_PAGE(pmap_kextract(va));
-	*slab = p->plinks.uma.slab;
-	*zone = p->plinks.uma.zone;
+	if ((p->flags & PG_OPAQUE) != 0) {
+		*zone = ((uma_page_slab_t)p)->ups_zone;
+		*slab = &((uma_page_slab_t)p)->ups_slab;
+	} else {
+		*zone = p->plinks.uma.zone;
+		*slab = p->plinks.uma.slab;
+	}
 }
 
 static __inline void
@@ -640,6 +681,7 @@ vsetzoneslab(vm_offset_t va, uma_zone_t zone, uma_slab_t slab)
 	vm_page_t p;
 
 	p = PHYS_TO_VM_PAGE(pmap_kextract(va));
+	KASSERT((p->flags & PG_OPAQUE) == 0, ("Clobbering slab page %p", p));
 	p->plinks.uma.slab = slab;
 	p->plinks.uma.zone = zone;
 }
