@@ -98,4 +98,8 @@ rtld_libc.a: ${LIBC_NOSSP_PIC} ${SRCTOP}/libexec/rtld-elf/rtld-libc/Makefile.inc
 	${AR} cr ${.OBJDIR}/${.TARGET} ${_rtld_libc_objs}
 CLEANFILES+=rtld_libc.a
 LDADD+=${.OBJDIR}/rtld_libc.a
+# XXX Hack!  Or is this right?  Link libgcc after -nostdlib.
+.if ${COMPILER_TYPE} == "gcc"
+LDADD+=	-lgcc
+.endif
 beforelinking: rtld_libc.a
