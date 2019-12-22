@@ -99,7 +99,7 @@ public:
     Data = ND;
     // Make sure that Data is a plain NamedDecl* so we can use its address
     // at getLookupResult.
-    assert(*(NamedDecl **)&Data == ND &&
+    assert(Data.getAddrOfPtr1() && *Data.getAddrOfPtr1() == ND &&
            "PointerUnion mangles the NamedDecl pointer!");
   }
 
