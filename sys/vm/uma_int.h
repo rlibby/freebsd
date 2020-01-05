@@ -412,7 +412,7 @@ typedef struct uma_slab * uma_slab_t;
 /* These three functions are for embedded (!OFFPAGE) use only. */
 size_t slab_sizeof(int nitems);
 size_t slab_space(int nitems);
-int slab_ipers(size_t size, int align);
+int uma_zone_startup_count(size_t size, int align, int nitems);
 
 /*
  * Slab structure with a full sized bitset and hash link for both

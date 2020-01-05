@@ -670,8 +670,8 @@ int
 vmem_startup_count(void)
 {
 
-	return (howmany(BT_MAXALLOC, slab_ipers(sizeof(struct vmem_btag),
-	    UMA_ALIGN_PTR)));
+	return (uma_zone_startup_count(sizeof(struct vmem_btag), UMA_ALIGN_PTR,
+	    BT_MAXALLOC));
 }
 #endif
 

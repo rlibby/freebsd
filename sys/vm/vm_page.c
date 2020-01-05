@@ -609,8 +609,8 @@ vm_page_startup(vm_offset_t vaddr)
 	/* vmem_startup() calls uma_prealloc(). */
 	boot_pages += vmem_startup_count();
 	/* vm_map_startup() calls uma_prealloc(). */
-	boot_pages += howmany(MAX_KMAP,
-	    slab_ipers(sizeof(struct vm_map), UMA_ALIGN_PTR));
+	boot_pages += uma_zone_startup_count(sizeof(struct vm_map),
+	    UMA_ALIGN_PTR, MAX_KMAP);
 
 	/*
 	 * Before we are fully boot strapped we need to account for the

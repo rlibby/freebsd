@@ -1658,15 +1658,6 @@ slab_sizeof(int nitems)
 	return (roundup(s, UMA_ALIGN_PTR + 1));
 }
 
-/*
- * Size of memory for embedded slabs (!OFFPAGE).
- */
-size_t
-slab_space(int nitems)
-{
-	return (UMA_SLAB_SIZE - slab_sizeof(nitems));
-}
-
 #define	UMA_FIXPT_SHIFT	31
 #define	UMA_FRAC_FIXPT(n, d)						\
 	((uint32_t)(((uint64_t)(n) << UMA_FIXPT_SHIFT) / (d)))
@@ -1705,18 +1696,6 @@ slab_ipers_hdr(u_int size, u_int rsize, u_int slabsize, bool hdr)
 	}
 
 	return (ipers);
-}
-
-/*
- * Compute the number of items that will fit in a slab for a startup zone.
- */
-int
-slab_ipers(size_t size, int align)
-{
-	int rsize;
-
-	rsize = roundup(size, align + 1); /* Assume no CACHESPREAD */
-	return (slab_ipers_hdr(size, rsize, UMA_SLAB_SIZE, true));
 }
 
 /*
@@ -2477,6 +2456,30 @@ zone_foreach(void (*zfunc)(uma_zone_t, void *arg), void *arg)
 		rw_runlock(&uma_rwlock);
 }
 
+/* Pre-determine keg layout of boot zones.  See keg_layout(). */
+static void
+startup_layout(int size, int align, int *ppera, int *ipers)
+{
+	int rsize;
+
+	rsize = roundup2(size, align + 1);
+	*ppera = howmany(size, PAGE_SIZE);
+	*ipers = slab_ipers_hdr(size, rsize, ptoa(*ppera), true);
+	if (*ipers == 0) {
+		(*ppera)++;
+		*ipers = slab_ipers_hdr(size, rsize, ptoa(*ppera), true);
+	}
+}
+
+int
+uma_zone_startup_count(size_t size, int align, int nitems)
+{
+	int ipers, ppera;
+
+	startup_layout(size, align, &ppera, &ipers);
+	return (ppera * howmany(nitems, ipers));
+}
+
 /*
  * Count how many pages do we need to bootstrap.  VM supplies
  * its need in early zones in the argument, we add up our zones,
@@ -2491,7 +2494,6 @@ uma_startup_count(int vm_zones)
 	int zones, pages;
 	u_int zppera, zipers;
 	u_int kppera, kipers;
-	size_t space, size;
 
 	ksize = sizeof(struct uma_keg) +
 	    (sizeof(struct uma_domain) * vm_ndomains);
@@ -2507,36 +2509,25 @@ uma_startup_count(int vm_zones)
 	 */
 	pages = howmany(zsize * 2 + ksize, PAGE_SIZE);
 
-#ifdef	UMA_MD_SMALL_ALLOC
+	/*
+	 * Memory for the rest of startup zones, UMA and VM, ...
+	 *
+	 * Inline uma_zone_startup_count here, because the zone count depends
+	 * on ppera.  We need to include the vm_zones too if we won't be using
+	 * uma_small_alloc for the boot zones.
+	 */
+	startup_layout(zsize, UMA_SUPER_ALIGN - 1, &zppera, &zipers);
 	zones = UMA_BOOT_ZONES;
-#else
-	zones = UMA_BOOT_ZONES + vm_zones;
-	vm_zones = 0;
-#endif
-	size = slab_sizeof(SLAB_MAX_SETSIZE);
-	space = slab_space(SLAB_MAX_SETSIZE);
-
-	/* Memory for the rest of startup zones, UMA and VM, ... */
-	if (zsize > space) {
-		/* See keg_large_init(). */
-		zppera = howmany(zsize + slab_sizeof(1), PAGE_SIZE);
-		zipers = 1;
+#ifdef UMA_MD_SMALL_ALLOC
+	if (zppera > 1)
 		zones += vm_zones;
-	} else {
-		zppera = 1;
-		zipers = space / zsize;
-	}
+#else
+	zones += vm_zones;
+#endif
 	pages += howmany(zones, zipers) * zppera;
 
 	/* ... and their kegs. Note that zone of zones allocates a keg! */
-	if (ksize > space) {
-		/* See keg_large_init(). */
-		kppera = howmany(ksize + slab_sizeof(1), PAGE_SIZE);
-		kipers = 1;
-	} else {
-		kppera = 1;
-		kipers = space / ksize;
-	}
+	startup_layout(ksize, UMA_SUPER_ALIGN - 1, &kppera, &kipers);
 	pages += howmany(zones + 1, kipers) * kppera;
 
 	/*
