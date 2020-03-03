@@ -725,6 +725,15 @@ pmap_thread_init_invl_gen_u(struct thread *td)
 	invl_gen->next = (void *)PMAP_INVL_GEN_NEXT_INVALID;
 }
 
+/* Copied from atomic.h. */
+#ifdef __GCC_ASM_FLAG_OUTPUTS__
+#define	CC_FLAG_OUT_INST(cc, loc)
+#define	CC_FLAG_OUT_CONS(cc)		"=@cc" #cc
+#else
+#define	CC_FLAG_OUT_INST(cc, loc)	"set" #cc " " loc " ;	"
+#define	CC_FLAG_OUT_CONS(cc)		"=q"
+#endif
+
 static bool
 pmap_di_load_invl(struct pmap_invl_gen *ptr, struct pmap_invl_gen *out)
 {
@@ -734,8 +743,9 @@ pmap_di_load_invl(struct pmap_invl_gen *ptr, struct pmap_invl_gen *out)
 	old_low = new_low = 0;
 	old_high = new_high = (uintptr_t)0;
 
-	__asm volatile("lock;cmpxchg16b\t%1"
-	    : "=@cce" (res), "+m" (*ptr), "+a" (old_low), "+d" (old_high)
+	__asm volatile("lock;cmpxchg16b\t%1;" CC_FLAG_OUT_INST(e, "%0")
+	    : CC_FLAG_OUT_CONS(e) (res), "+m" (*ptr), "+a" (old_low),
+	      "+d" (old_high)
 	    : "b"(new_low), "c" (new_high)
 	    : "memory", "cc");
 	if (res == 0) {
@@ -762,8 +772,9 @@ pmap_di_store_invl(struct pmap_invl_gen *ptr, struct pmap_invl_gen *old_val,
 	old_low = old_val->gen;
 	old_high = (uintptr_t)old_val->next;
 
-	__asm volatile("lock;cmpxchg16b\t%1"
-	    : "=@cce" (res), "+m" (*ptr), "+a" (old_low), "+d" (old_high)
+	__asm volatile("lock;cmpxchg16b\t%1;" CC_FLAG_OUT_INST(e, "%0")
+	    : CC_FLAG_OUT_CONS(e) (res), "+m" (*ptr), "+a" (old_low),
+	      "+d" (old_high)
 	    : "b"(new_low), "c" (new_high)
 	    : "memory", "cc");
 	return (res);

@@ -153,6 +153,19 @@ void		atomic_store_rel_##TYPE(volatile u_##TYPE *p, u_##TYPE v)
 #endif
 
 /*
+ * Newer versions of clang and gcc, including the in-tree compiler, support
+ * outputting status flags directly from asm blocks.  Provide support for
+ * older cross compilers, where the flag is extracted via setcc.
+ */
+#ifdef __GCC_ASM_FLAG_OUTPUTS__
+#define	CC_FLAG_OUT_INST(cc, loc)
+#define	CC_FLAG_OUT_CONS(cc)		"=@cc" #cc
+#else
+#define	CC_FLAG_OUT_INST(cc, loc)	"set" #cc " " loc " ;	"
+#define	CC_FLAG_OUT_CONS(cc)		"=q"
+#endif
+
+/*
  * The assembly is volatilized to avoid code chunk removal by the compiler.
  * GCC aggressively reorders operations and memory clobbering is necessary
  * in order to avoid that for memory barriers.
@@ -201,8 +214,9 @@ atomic_cmpset_##TYPE(volatile u_##TYPE *dst, u_##TYPE expect, u_##TYPE src) \
 	__asm __volatile(				\
 	"	" MPLOCKED "		"		\
 	"	cmpxchg %3,%1 ;	"			\
+	CC_FLAG_OUT_INST(e, "%0")			\
 	"# atomic_cmpset_" #TYPE "	"		\
-	: "=@cce" (res),		/* 0 */		\
+	: CC_FLAG_OUT_CONS(e) (res),	/* 0 */		\
 	  "+m" (*dst),			/* 1 */		\
 	  "+a" (expect)			/* 2 */		\
 	: "r" (src)			/* 3 */		\
@@ -218,8 +232,9 @@ atomic_fcmpset_##TYPE(volatile u_##TYPE *dst, u_##TYPE *expect, u_##TYPE src) \
 	__asm __volatile(				\
 	"	" MPLOCKED "		"		\
 	"	cmpxchg %3,%1 ;		"		\
+	CC_FLAG_OUT_INST(e, "%0")			\
 	"# atomic_fcmpset_" #TYPE "	"		\
-	: "=@cce" (res),		/* 0 */		\
+	: CC_FLAG_OUT_CONS(e) (res),	/* 0 */		\
 	  "+m" (*dst),			/* 1 */		\
 	  "+a" (*expect)		/* 2 */		\
 	: "r" (src)			/* 3 */		\
@@ -276,8 +291,9 @@ atomic_testandset_int(volatile u_int *p, u_int v)
 	__asm __volatile(
 	"	" MPLOCKED "		"
 	"	btsl	%2,%1 ;		"
+	CC_FLAG_OUT_INST(c, "%0")
 	"# atomic_testandset_int"
-	: "=@ccc" (res),		/* 0 */
+	: CC_FLAG_OUT_CONS(c) (res),	/* 0 */
 	  "+m" (*p)			/* 1 */
 	: "Ir" (v & 0x1f)		/* 2 */
 	: "cc");
@@ -292,8 +308,9 @@ atomic_testandset_long(volatile u_long *p, u_int v)
 	__asm __volatile(
 	"	" MPLOCKED "		"
 	"	btsq	%2,%1 ;		"
+	CC_FLAG_OUT_INST(c, "%0")
 	"# atomic_testandset_long"
-	: "=@ccc" (res),		/* 0 */
+	: CC_FLAG_OUT_CONS(c) (res),	/* 0 */
 	  "+m" (*p)			/* 1 */
 	: "Jr" ((u_long)(v & 0x3f))	/* 2 */
 	: "cc");
@@ -308,8 +325,9 @@ atomic_testandclear_int(volatile u_int *p, u_int v)
 	__asm __volatile(
 	"	" MPLOCKED "		"
 	"	btrl	%2,%1 ;		"
+	CC_FLAG_OUT_INST(c, "%0")
 	"# atomic_testandclear_int"
-	: "=@ccc" (res),		/* 0 */
+	: CC_FLAG_OUT_CONS(c) (res),	/* 0 */
 	  "+m" (*p)			/* 1 */
 	: "Ir" (v & 0x1f)		/* 2 */
 	: "cc");
@@ -324,8 +342,9 @@ atomic_testandclear_long(volatile u_long *p, u_int v)
 	__asm __volatile(
 	"	" MPLOCKED "		"
 	"	btrq	%2,%1 ;		"
+	CC_FLAG_OUT_INST(c, "%0")
 	"# atomic_testandclear_long"
-	: "=@ccc" (res),		/* 0 */
+	: CC_FLAG_OUT_CONS(c) (res),	/* 0 */
 	  "+m" (*p)			/* 1 */
 	: "Jr" ((u_long)(v & 0x3f))	/* 2 */
 	: "cc");
@@ -463,6 +482,8 @@ ATOMIC_LOADSTORE(long);
 #undef ATOMIC_LOAD
 #undef ATOMIC_STORE
 #undef ATOMIC_LOADSTORE
+#undef CC_FLAG_OUT_INST
+#undef CC_FLAG_OUT_CONS
 #ifndef WANT_FUNCTIONS
 
 /* Read the current value and store a new value in the destination. */
