@@ -34,7 +34,7 @@
 u_long redzone_get_size(caddr_t naddr);
 u_long redzone_size_ntor(u_long nsize);
 void *redzone_addr_ntor(caddr_t naddr);
-void *redzone_setup(caddr_t raddr, u_long nsize);
-void redzone_check(caddr_t naddr);
+void *redzone_setup(caddr_t raddr, u_long nsize, const void *ctx);
+void redzone_check(caddr_t naddr, const void *ctx);
 
 #endif	/* _VM_REDZONE_H_ */

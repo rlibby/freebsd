@@ -49,7 +49,8 @@ SYSCTL_INT(_vm_redzone, OID_AUTO, panic, CTLFLAG_RWTUN, &redzone_panic, 0,
 
 #define	REDZONE_CHSIZE	(16)
 #define	REDZONE_CFSIZE	(16)
-#define	REDZONE_HSIZE	(sizeof(struct stack) + sizeof(u_long) + REDZONE_CHSIZE)
+#define	REDZONE_HSIZE	(sizeof(struct stack) + sizeof(u_long) +	\
+    sizeof(void *) + REDZONE_CHSIZE)
 #define	REDZONE_FSIZE	(REDZONE_CFSIZE)
 
 static u_long
@@ -76,7 +77,8 @@ redzone_get_size(caddr_t naddr)
 {
 	u_long nsize;
 
-	bcopy(naddr - REDZONE_CHSIZE - sizeof(u_long), &nsize, sizeof(nsize));
+	bcopy(naddr - (REDZONE_CHSIZE + sizeof(void *) + sizeof(u_long)),
+	    &nsize, sizeof(nsize));
 	return (nsize);
 }
 
@@ -98,7 +100,7 @@ redzone_addr_ntor(caddr_t naddr)
  * Set redzones and remember allocation backtrace.
  */
 void *
-redzone_setup(caddr_t raddr, u_long nsize)
+redzone_setup(caddr_t raddr, u_long nsize, const void *ctx)
 {
 	struct stack st;
 	caddr_t haddr, faddr;
@@ -114,6 +116,8 @@ redzone_setup(caddr_t raddr, u_long nsize)
 	haddr += sizeof(st);
 	bcopy(&nsize, haddr, sizeof(nsize));
 	haddr += sizeof(nsize);
+	bcopy(&ctx, haddr, sizeof(ctx));
+	haddr += sizeof(ctx);
 	memset(haddr, 0x42, REDZONE_CHSIZE);
 	haddr += REDZONE_CHSIZE;
 
@@ -128,22 +132,34 @@ redzone_setup(caddr_t raddr, u_long nsize)
  * This function is called on free() and realloc().
  */
 void
-redzone_check(caddr_t naddr)
+redzone_check(caddr_t naddr, const void *ctx)
 {
 	struct stack ast, fst;
+	const void *actx;
 	caddr_t haddr, faddr;
-	u_int ncorruptions;
+	u_int ncorruptions, total;
 	u_long nsize;
 	int i;
+
+	total = 0;
 
 	haddr = naddr - REDZONE_HSIZE;
 	bcopy(haddr, &ast, sizeof(ast));
 	haddr += sizeof(ast);
 	bcopy(haddr, &nsize, sizeof(nsize));
 	haddr += sizeof(nsize);
+	bcopy(haddr, &actx, sizeof(actx));
+	haddr += sizeof(actx);
 
 	atomic_subtract_long(&redzone_extra_mem,
 	    redzone_size_ntor(nsize) - nsize);
+
+	/* Check for context match. */
+	if (ctx != actx) {
+		printf("REDZONE: Context mismatch. alloc=%p, free=%p\n", actx,
+		    ctx);
+		total++;
+	}
 
 	/* Look for buffer underflow. */
 	ncorruptions = 0;
@@ -151,18 +167,12 @@ redzone_check(caddr_t naddr)
 		if (*(u_char *)haddr != 0x42)
 			ncorruptions++;
 	}
-	if (ncorruptions > 0) {
+	if (ncorruptions > 0)
 		printf("REDZONE: Buffer underflow detected. %u byte%s "
 		    "corrupted before %p (%lu bytes allocated).\n",
 		    ncorruptions, ncorruptions == 1 ? "" : "s", naddr, nsize);
-		printf("Allocation backtrace:\n");
-		stack_print_ddb(&ast);
-		printf("Free backtrace:\n");
-		stack_save(&fst);
-		stack_print_ddb(&fst);
-		if (redzone_panic)
-			panic("Stopping here.");
-	}
+	total += ncorruptions;
+
 	faddr = naddr + nsize;
 	/* Look for buffer overflow. */
 	ncorruptions = 0;
@@ -170,10 +180,13 @@ redzone_check(caddr_t naddr)
 		if (*(u_char *)faddr != 0x42)
 			ncorruptions++;
 	}
-	if (ncorruptions > 0) {
+	if (ncorruptions > 0)
 		printf("REDZONE: Buffer overflow detected. %u byte%s corrupted "
 		    "after %p (%lu bytes allocated).\n", ncorruptions,
 		    ncorruptions == 1 ? "" : "s", naddr + nsize, nsize);
+	total += ncorruptions;
+
+	if (total > 0) {
 		printf("Allocation backtrace:\n");
 		stack_print_ddb(&ast);
 		printf("Free backtrace:\n");

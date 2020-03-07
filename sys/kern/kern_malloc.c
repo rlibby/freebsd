@@ -646,7 +646,7 @@ void *
 		t_malloc_fail = time_uptime;
 #ifdef DEBUG_REDZONE
 	if (va != NULL)
-		va = redzone_setup(va, osize);
+		va = redzone_setup(va, osize, mtp);
 #endif
 	return ((void *) va);
 }
@@ -713,7 +713,7 @@ malloc_domainset(size_t size, struct malloc_type *mtp, struct domainset *ds,
 		t_malloc_fail = time_uptime;
 #ifdef DEBUG_REDZONE
 	if (ret != NULL)
-		ret = redzone_setup(ret, osize);
+		ret = redzone_setup(ret, osize, mtp);
 #endif
 	return (ret);
 }
@@ -772,7 +772,7 @@ free_dbg(void **addrp, struct malloc_type *mtp)
 #endif
 
 #ifdef DEBUG_REDZONE
-	redzone_check(addr);
+	redzone_check(addr, mtp);
 	*addrp = redzone_addr_ntor(addr);
 #endif
 
