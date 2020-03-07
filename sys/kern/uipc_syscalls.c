@@ -306,7 +306,11 @@ accept1(td, s, uname, anamelen, flags)
 	if (error != 0)
 		fdclose(td, fp, td->td_retval[0]);
 	fdrop(fp, td);
+#if 0
 	free(name, M_SONAME);
+#else
+	free(name, M_TEMP);
+#endif
 	return (error);
 }
 
