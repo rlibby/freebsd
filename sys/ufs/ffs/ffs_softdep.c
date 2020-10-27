@@ -9251,14 +9251,6 @@ newdirrem(bp, dp, ip, isrmdir, prevdirremp)
 	ump = ITOUMP(dp);
 
 	/*
-	 * Acquire an extra reference on the child so that the end-of-life
-	 * truncate will not happen until after the directory page is
-	 * written.  The reference is released in handle_workitem_remove.
-	 */
-	if (isrmdir || ITOV(ip)->v_type != VDIR)
-		vref(ITOV(ip));
-
-	/*
 	 * If the system is over its limit and our filesystem is
 	 * responsible for more than our share of that usage and
 	 * we are not a snapshot, request some inodedep cleanup.
@@ -9902,9 +9894,6 @@ handle_workitem_remove(dirrem, flags)
 		return (EBUSY);
 	ip = VTOI(vp);
 	MPASS(ip->i_mode != 0);
-	/* Drop the extra reference on the child acquired in newdirrem. */
-	if ((dirrem->dm_state & RMDIR) != 0 || vp->v_type != VDIR)
-		vunref(vp);
 	ACQUIRE_LOCK(ump);
 	if ((inodedep_lookup(mp, oldinum, 0, &inodedep)) == 0)
 		panic("handle_workitem_remove: lost inodedep");
