@@ -80,11 +80,8 @@ ufs_need_inactive(ap)
 	if (vn_need_pageq_flush(vp))
 		return (1);
 	if (ip->i_mode == 0 ||  ip->i_nlink <= 0 ||
-	    (ip->i_effnlink == 0 && DOINGSOFTDEP(vp)) ||
 	    (ip->i_flag & (IN_ACCESS | IN_CHANGE | IN_MODIFIED |
-	    IN_UPDATE)) != 0 ||
-	    (ip->i_effnlink <= 0 && (ip->i_size != 0 || (I_IS_UFS2(ip) &&
-	    ip->i_din2->di_extsize != 0))))
+	    IN_UPDATE)) != 0)
 		return (1);
 #ifdef QUOTA
 	for (i = 0; i < MAXQUOTAS; i++) {
@@ -132,8 +129,7 @@ ufs_inactive(ap)
 	 */
 	qsyncvp(vp);
 #endif
-	if ((ip->i_effnlink == 0 && DOINGSOFTDEP(vp)) ||
-	    (ip->i_nlink <= 0 && !UFS_RDONLY(ip))) {
+	if (ip->i_nlink <= 0 && !UFS_RDONLY(ip)) {
 	loop:
 		if (vn_start_secondary_write(vp, &mp, V_NOWAIT) != 0) {
 			/* Cannot delete file while file system is suspended */
@@ -164,7 +160,7 @@ ufs_inactive(ap)
 	isize = ip->i_size;
 	if (I_IS_UFS2(ip))
 		isize += ip->i_din2->di_extsize;
-	if (ip->i_effnlink <= 0 && isize && !UFS_RDONLY(ip))
+	if (ip->i_nlink <= 0 && isize && !UFS_RDONLY(ip))
 		error = UFS_TRUNCATE(vp, (off_t)0, IO_EXT | IO_NORMAL, NOCRED);
 	if (ip->i_nlink <= 0 && ip->i_mode && !UFS_RDONLY(ip)) {
 #ifdef QUOTA
