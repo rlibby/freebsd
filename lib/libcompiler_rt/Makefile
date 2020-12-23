@@ -4,7 +4,8 @@
 
 PACKAGE=	lib${LIB}
 LIB=		compiler_rt
-NO_PIC=
+NO_SHLIB=
+BUILD_NOSSP_PIC_ARCHIVE=
 WARNS?=		2
 
 CFLAGS+=	${PICFLAG}
