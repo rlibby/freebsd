@@ -85,7 +85,8 @@ SUBDIR.${MK_TESTS}+= tests
 # Some of the required math functions (div & mod) are implemented in
 # libcompiler_rt on some architectures.  We link a special static build of the
 # library without -fstack-protector (SSP).
-LIBADD+=	compiler_rt_nossp_pic
+# LIBADD+=	compiler_rt_nossp_pic
+LIBADD+=	compiler_rt
 
 .include <bsd.prog.mk>
 ${PROG_FULL}:	${VERSION_MAP}
