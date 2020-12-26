@@ -83,9 +83,13 @@ SUBDIR.${MK_TESTS}+= tests
 .endif
 
 # Some of the required math functions (div & mod) are implemented in
-# libcompiler_rt on some architectures.  We link a special static build of the
-# library without -fstack-protector (SSP).
-# LIBADD+=	compiler_rt_nossp_pic
+# libcompiler_rt on some architectures.  We link it here, but there's a
+# catch: libcompiler_rt is normally compiled with -fstack-protector
+# (SSP), but SSP is not compatible with rtld.  We link it anyway because
+# so far none of the objects that actually get linked have procedures
+# that have SSP instrumentation.  We can revisit this with a more
+# reliable alternative if we start to see undefined references to
+# __stack_chk_guard.
 LIBADD+=	compiler_rt
 
 .include <bsd.prog.mk>

@@ -25,11 +25,9 @@ LIB_PRIVATE=	${PRIVATELIB:Dprivate}
 # INSTALL_PIC_ARCHIVE will be defined only if we are to create a PIC archive.
 # BUILD_NOSSP_PIC_ARCHIVE will be defined only if we are to create a PIC archive.
 .if defined(NO_PIC)
+.undef SHLIB_NAME
 .undef INSTALL_PIC_ARCHIVE
 .undef BUILD_NOSSP_PIC_ARCHIVE
-.endif
-.if defined(NO_PIC) || defined(NO_SHLIB)
-.undef SHLIB_NAME
 .else
 .if !defined(SHLIB) && defined(LIB)
 SHLIB=		${LIB}

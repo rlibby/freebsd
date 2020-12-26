@@ -36,7 +36,6 @@ _INTERNALLIBS=	\
 		amu \
 		bsnmptools \
 		c_nossp_pic \
-		compiler_rt_nossp_pic \
 		cron \
 		elftc \
 		fifolog \
@@ -591,9 +590,6 @@ LIBPMCSTAT?=	${LIBPMCSTATDIR}/libpmcstat${PIE_SUFFIX}.a
 
 LIBC_NOSSP_PICDIR=	${_LIB_OBJTOP}/lib/libc
 LIBC_NOSSP_PIC?=	${LIBC_NOSSP_PICDIR}/libc_nossp_pic.a
-
-LIBCOMPILER_RT_NOSSP_PICDIR=	${_LIB_OBJTOP}/lib/libcompiler_rt
-LIBCOMPILER_RT_NOSSP_PIC?=	${LIBCOMPILER_RT_NOSSP_PICDIR}/libcompiler_rt_nossp_pic.a
 
 # Define a directory for each library.  This is useful for adding -L in when
 # not using a --sysroot or for meta mode bootstrapping when there is no
