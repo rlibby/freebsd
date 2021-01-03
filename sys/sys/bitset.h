@@ -40,137 +40,150 @@
  */
 #define	__constexpr_cond(expr)	(__builtin_constant_p((expr)) && (expr))
 
+#define	__bitset_bitno(_s, n)						\
+	(__constexpr_cond(__bitset_words((_s)) == 1) ?			\
+	    (__size_t)(n) : ((n) % _BITSET_BITS))
+
 #define	__bitset_mask(_s, n)						\
-	(1UL << (__constexpr_cond(__bitset_words((_s)) == 1) ?		\
-	    (__size_t)(n) : ((n) % _BITSET_BITS)))
+	(1UL << __bitset_bitno(_s, n))
 
 #define	__bitset_word(_s, n)						\
 	(__constexpr_cond(__bitset_words((_s)) == 1) ?			\
 	 0 : ((n) / _BITSET_BITS))
 
-#define	BIT_CLR(_s, n, p)						\
-	((p)->__bits[__bitset_word(_s, n)] &= ~__bitset_mask((_s), (n)))
+/*
+ * Bitset iteration macros.  The suffix ([123]) indicates the number of
+ * sets being iterated.
+ *
+ * The _BIT_CMP[12] macros evaluate to true if the given condition is
+ * true for all words or coordinate sets of words.  The condition is
+ * itself a macro or function taking as arguments a mask of bits in
+ * range and the value of each word or coordinate set of words.
+ *
+ * The _BIT_OP[123] macros apply an operation to all words or coordinate
+ * sets of words.
+ */
+
+#define	_BIT_CMP1(_s, s1, cond)	__extension__ ({			\
+	__size_t __i = 0, __s = (_s);					\
+	__size_t __n = __bitset_word(_s, __s);				\
+	__size_t __r = __bitset_bitno(_s, __s);				\
+	__typeof((s1)->__bits[0]) *__s1_bits = (s1)->__bits;		\
+	for (; __i < __n; __i++)					\
+		if (!(cond(-1L, __s1_bits[__i])))			\
+			break;						\
+	(__i == __n && (__r == 0 ||					\
+	    (cond((1L << __r) - 1, __s1_bits[__n]))));			\
+})
+
+#define	_BIT_CMP2(_s, s1, s2, cond)	__extension__ ({		\
+	__size_t __i = 0, __s = (_s);					\
+	__size_t __n = __bitset_word(_s, __s);				\
+	__size_t __r = __bitset_bitno(_s, __s);				\
+	__typeof((s1)->__bits[0]) *__s1_bits = (s1)->__bits;		\
+	__typeof((s2)->__bits[0]) *__s2_bits = (s2)->__bits;		\
+	for (; __i < __n; __i++)					\
+		if (!(cond(-1L, __s1_bits[__i], __s2_bits[__i])))	\
+			break;						\
+	(__i == __n && (__r == 0 ||					\
+	    (cond((1L << __r) - 1, __s1_bits[__n], __s2_bits[__n]))));	\
+})
+
+#define	_BIT_EQ_MASK(m, x, y)	(((m) & (x)) == ((m) & (y)))
+
+#define	_BIT_OP1(_s, s1, op)	do {					\
+	__size_t __i = 0, __n = __bitset_words(_s);			\
+	__typeof((s1)->__bits[0]) *__s1_bits = (s1)->__bits;		\
+	for (; __i < __n; __i++)					\
+		op(__s1_bits[__i]);					\
+} while (0)
+
+#define	_BIT_OP2(_s, s1, s2, op)	do {				\
+	__size_t __i = 0, __n = __bitset_words(_s);			\
+	__typeof((s1)->__bits[0]) *__s1_bits = (s1)->__bits;		\
+	__typeof((s2)->__bits[0]) *__s2_bits = (s2)->__bits;		\
+	for (; __i < __n; __i++)					\
+		op(__s1_bits[__i], __s2_bits[__i]);			\
+} while (0)
+
+#define	_BIT_OP3(_s, s1, s2, s3, op)	do {				\
+	__size_t __i = 0, __n = __bitset_words(_s);			\
+	__typeof((s1)->__bits[0]) *__s1_bits = (s1)->__bits;		\
+	__typeof((s2)->__bits[0]) *__s2_bits = (s2)->__bits;		\
+	__typeof((s3)->__bits[0]) *__s3_bits = (s3)->__bits;		\
+	for (; __i < __n; __i++)					\
+		op(__s1_bits[__i], __s2_bits[__i], __s3_bits[__i]);	\
+} while (0)
+
+/*
+ * Bitset API.
+ */
+
+#define	BIT_CLR(_s, n, p)	do {					\
+	__size_t __n = (n);						\
+	((p)->__bits[__bitset_word(_s, __n)] &=				\
+	    ~__bitset_mask(_s, __n));					\
+} while (0)
 
 #define	BIT_COPY(_s, f, t)	(void)(*(t) = *(f))
 
-#define	BIT_ISSET(_s, n, p)						\
-	((((p)->__bits[__bitset_word(_s, n)] & __bitset_mask((_s), (n))) != 0))
+#define	BIT_ISSET(_s, n, p)	__extension__ ({			\
+	__size_t __n = (n);						\
+	(((p)->__bits[__bitset_word(_s, __n)] &				\
+	    __bitset_mask(_s, __n)) != 0);				\
+})
 
-#define	BIT_SET(_s, n, p)						\
-	((p)->__bits[__bitset_word(_s, n)] |= __bitset_mask((_s), (n)))
-
-#define	BIT_ZERO(_s, p) do {						\
-	__size_t __i;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		(p)->__bits[__i] = 0L;					\
-} while (0)
-
-#define	BIT_FILL(_s, p) do {						\
-	__size_t __i;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		(p)->__bits[__i] = -1L;					\
-} while (0)
-
-#define	BIT_SETOF(_s, n, p) do {					\
-	BIT_ZERO(_s, p);						\
-	(p)->__bits[__bitset_word(_s, n)] = __bitset_mask((_s), (n));	\
+#define	BIT_SET(_s, n, p)	do {					\
+	__size_t __n = (n);						\
+	((p)->__bits[__bitset_word(_s, __n)] |=				\
+	    __bitset_mask(_s, __n));					\
 } while (0)
 
 /* Is p empty. */
-#define	BIT_EMPTY(_s, p) __extension__ ({				\
-	__size_t __i;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		if ((p)->__bits[__i])					\
-			break;						\
-	__i == __bitset_words((_s));					\
-})
+#define	_BIT_EMPTY_COND(m, x)	_BIT_EQ_MASK(m, x, 0)
+#define	BIT_EMPTY(_s, p)	_BIT_CMP1(_s, p, _BIT_EMPTY_COND)
 
 /* Is p full set. */
-#define	BIT_ISFULLSET(_s, p) __extension__ ({				\
-	__size_t __i;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		if ((p)->__bits[__i] != (long)-1)			\
-			break;						\
-	__i == __bitset_words((_s));					\
-})
+#define	_BIT_ISFULLSET_COND(m, x)	_BIT_EQ_MASK(m, x, -1L)
+#define	BIT_ISFULLSET(_s, p)	_BIT_CMP1(_s, p, _BIT_ISFULLSET_COND)
 
 /* Is c a subset of p. */
-#define	BIT_SUBSET(_s, p, c) __extension__ ({				\
-	__size_t __i;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		if (((c)->__bits[__i] &					\
-		    (p)->__bits[__i]) !=				\
-		    (c)->__bits[__i])					\
-			break;						\
-	__i == __bitset_words((_s));					\
-})
+#define	_BIT_SUBSET_COND(m, p, c)	_BIT_EQ_MASK(m, (p) & (c), c)
+#define	BIT_SUBSET(_s, p, c)	_BIT_CMP2(_s, p, c, _BIT_SUBSET_COND)
 
 /* Are there any common bits between b & c? */
-#define	BIT_OVERLAP(_s, p, c) __extension__ ({				\
-	__size_t __i;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		if (((c)->__bits[__i] &					\
-		    (p)->__bits[__i]) != 0)				\
-			break;						\
-	__i != __bitset_words((_s));					\
-})
+#define	_BIT_OVERLAP_COND(m, p, c)	_BIT_EQ_MASK(m, (p) & (c), 0)
+#define	BIT_OVERLAP(_s, p, c)	(!_BIT_CMP2(_s, p, c, _BIT_OVERLAP_COND))
 
 /* Compare two sets, returns 0 if equal 1 otherwise. */
-#define	BIT_CMP(_s, p, c) __extension__ ({				\
-	__size_t __i;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		if (((c)->__bits[__i] !=				\
-		    (p)->__bits[__i]))					\
-			break;						\
-	__i != __bitset_words((_s));					\
-})
+#define	_BIT_CMP_COND(m, p, c)	_BIT_EQ_MASK(m, p, c)
+#define	BIT_CMP(_s, p, c)	(!_BIT_CMP2(_s, p, c, _BIT_CMP_COND))
 
-#define	BIT_OR(_s, d, s) do {						\
-	__size_t __i;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		(d)->__bits[__i] |= (s)->__bits[__i];			\
-} while (0)
+#define	_BIT_ZERO_OP(d)			((d) = 0)
+#define	_BIT_FILL_OP(d)			((d) = -1L)
+#define	_BIT_AND_OP(d, s)		((d) &= (s))
+#define	_BIT_AND2_OP(d, s1, s2)		((d) = (s1) & (s2))
+#define	_BIT_ANDNOT_OP(d, s)		((d) &= ~(s))
+#define	_BIT_ANDNOT2_OP(d, s1, s2)	((d) = (s1) & ~(s2))
+#define	_BIT_OR_OP(d, s)		((d) |= (s))
+#define	_BIT_OR2_OP(d, s1, s2)		((d) = (s1) | (s2))
+#define	_BIT_XOR_OP(d, s)		((d) ^= (s))
+#define	_BIT_XOR2_OP(d, s1, s2)		((d) = (s1) ^ (s2))
 
-#define	BIT_OR2(_s, d, s1, s2) do {					\
-	__size_t __i;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		(d)->__bits[__i] = (s1)->__bits[__i] | (s2)->__bits[__i];\
-} while (0)
+#define	BIT_ZERO(_s, d)			_BIT_OP1(_s, d, _BIT_ZERO_OP)
+#define	BIT_FILL(_s, d)			_BIT_OP1(_s, d, _BIT_FILL_OP)
+#define	BIT_AND(_s, d, s)		_BIT_OP2(_s, d, s, _BIT_AND_OP)
+#define	BIT_AND2(_s, d, s1, s2)		_BIT_OP3(_s, d, s1, s2, _BIT_AND2_OP)
+#define	BIT_ANDNOT(_s, d, s)		_BIT_OP2(_s, d, s, _BIT_ANDNOT_OP)
+#define	BIT_ANDNOT2(_s, d, s1, s2)	_BIT_OP3(_s, d, s, _BIT_ANDNOT2_OP)
+#define	BIT_OR(_s, d, s)		_BIT_OP2(_s, d, s, _BIT_OR_OP)
+#define	BIT_OR2(_s, d, s1, s2)		_BIT_OP3(_s, d, s1, s2, _BIT_OR2_OP)
+#define	BIT_XOR(_s, d, s)		_BIT_OP2(_s, d, s, _BIT_XOR_OP)
+#define	BIT_XOR2(_s, d, s1, s2)		_BIT_OP3(_s, d, s1, s2, _BIT_XOR2_OP)
 
-#define	BIT_AND(_s, d, s) do {						\
-	__size_t __i;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		(d)->__bits[__i] &= (s)->__bits[__i];			\
-} while (0)
-
-#define	BIT_AND2(_s, d, s1, s2) do {					\
-	__size_t __i;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		(d)->__bits[__i] = (s1)->__bits[__i] & (s2)->__bits[__i];\
-} while (0)
-
-#define	BIT_ANDNOT(_s, d, s) do {					\
-	__size_t __i;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		(d)->__bits[__i] &= ~(s)->__bits[__i];			\
-} while (0)
-
-#define	BIT_ANDNOT2(_s, d, s1, s2) do {					\
-	__size_t __i;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		(d)->__bits[__i] = (s1)->__bits[__i] & ~(s2)->__bits[__i];\
-} while (0)
-
-#define	BIT_XOR(_s, d, s) do {						\
-	__size_t __i;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		(d)->__bits[__i] ^= (s)->__bits[__i];			\
-} while (0)
-
-#define	BIT_XOR2(_s, d, s1, s2) do {					\
-	__size_t __i;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		(d)->__bits[__i] = (s1)->__bits[__i] ^ (s2)->__bits[__i];\
+#define	BIT_SETOF(_s, n, p) do {					\
+	BIT_ZERO(_s, p);						\
+	BIT_SET(_s, n, p);						\
 } while (0)
 
 /*
@@ -200,74 +213,105 @@
 	    &(p)->__bits[__bitset_word((_s), (n))], (n)) != 0)
 
 /* Convenience functions catering special cases. */
-#define	BIT_AND_ATOMIC(_s, d, s) do {					\
-	__size_t __i;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		atomic_clear_long(&(d)->__bits[__i],			\
-		    ~(s)->__bits[__i]);					\
-} while (0)
+#define	_BIT_AND_ATOMIC_OP(d, s)					\
+	atomic_clear_long(&(d), ~(s))
+#define	BIT_AND_ATOMIC(_s, d, s)					\
+	_BIT_OP2(_s, d, s, _BIT_AND_ATOMIC_OP)
 
-#define	BIT_OR_ATOMIC(_s, d, s) do {					\
-	__size_t __i;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		atomic_set_long(&(d)->__bits[__i],			\
-		    (s)->__bits[__i]);					\
-} while (0)
+#define	_BIT_OR_ATOMIC_OP(d, s)						\
+	atomic_set_long(&(d), (s))
+#define	BIT_OR_ATOMIC(_s, d, s)						\
+	_BIT_OP2(_s, d, s, _BIT_OR_ATOMIC_OP)
 
-#define	BIT_COPY_STORE_REL(_s, f, t) do {				\
-	__size_t __i;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		atomic_store_rel_long(&(t)->__bits[__i],		\
-		    (f)->__bits[__i]);					\
-} while (0)
+#define	_BIT_COPY_STORE_REL_OP(s, d)					\
+	atomic_store_rel_long(&(d), (s))
+#define	BIT_COPY_STORE_REL(_s, s, d)					\
+	_BIT_OP2(_s, s, d, _BIT_COPY_STORE_REL_OP)
 
 /*
  * Note that `start` and the returned value from BIT_FFS_AT are
  * 1-based bit indices.
  */
 #define	BIT_FFS_AT(_s, p, start) __extension__ ({			\
-	__size_t __i;							\
-	long __bit, __mask;						\
+	__size_t __i, __s = (_s);					\
+	__size_t __n = __bitset_word(_s, __s);				\
+	__size_t __r = __bitset_bitno(_s, __s);				\
+	__typeof((p)->__bits[0]) *__bits = (p)->__bits;			\
+	long __bit;							\
 									\
-	__mask = ~0UL << ((start) % _BITSET_BITS);			\
 	__bit = 0;							\
-	for (__i = __bitset_word((_s), (start));			\
-	    __i < __bitset_words((_s));					\
-	    __i++) {							\
-		if (((p)->__bits[__i] & __mask) != 0) {			\
-			__bit = ffsl((p)->__bits[__i] & __mask);	\
-			__bit += __i * _BITSET_BITS;			\
-			break;						\
+	do {								\
+		if ((start) == 0) {					\
+			__i = 0;    					\
+		} else {						\
+			long __mask;					\
+			__i = bitstet_word(_s, (start));		\
+			__mask = ~0UL << __bitset_bitno(_s, (start));	\
+			if (__r != 0 && __i == __n)			\
+				__mask &= (1UL << __r) - 1;		\
+			__bit = ffsl(__bits[__i] & __mask);		\
+			if (__bit != 0) {				\
+				__bit += __i * _BITSET_BITS;		\
+				break;					\
+			}						\
+			__i++;						\
 		}							\
-		__mask = ~0UL;						\
-	}								\
+		for (; __i < __n; __i++) {				\
+			if (__bits[__i] != 0) {				\
+				__bit = ffsl(__bits[__i]);		\
+				__bit += __i * _BITSET_BITS;		\
+				break;					\
+			}						\
+		}							\
+		if (__r == 0 || __bit != 0)				\
+			break;						\
+		__bit = ffsl(__bits[__n] & ((1UL << __r) - 1));		\
+		if (__bit)						\
+			__bit += __n * _BITSET_BITS;			\
+	} while (0);							\
 	__bit;								\
 })
 
 #define	BIT_FFS(_s, p) BIT_FFS_AT((_s), (p), 0)
 
 #define	BIT_FLS(_s, p) __extension__ ({					\
-	__size_t __i;							\
+	__size_t __i, __s = (_s);					\
+	__size_t __n = __bitset_word(_s, __s);				\
+	__size_t __r = __bitset_bitno(_s, __s);				\
+	__typeof((p)->__bits[0]) *__bits = (p)->__bits;			\
 	long __bit;							\
 									\
 	__bit = 0;							\
-	for (__i = __bitset_words((_s)); __i > 0; __i--) {		\
-		if ((p)->__bits[__i - 1] != 0) {			\
-			__bit = flsl((p)->__bits[__i - 1]);		\
-			__bit += (__i - 1) * _BITSET_BITS;		\
-			break;						\
+	if (__r != 0) {							\
+		__bit = flsl(((1L << __r) - 1) & __bits[__n]);		\
+		if (__bit)						\
+			__bit += __n * _BITSET_BITS;			\
+	}								\
+	if (__bit == 0) {						\
+		for (__i = __n; __i > 0; ) {				\
+			__i--;						\
+			if (__bits[__i] != 0) {				\
+				__bit = flsl(__bits[__i]);		\
+				__bit += __i * _BITSET_BITS;		\
+				break;					\
+			}						\
 		}							\
 	}								\
 	__bit;								\
 })
 
 #define	BIT_COUNT(_s, p) __extension__ ({				\
-	__size_t __i;							\
+	__size_t __i = 0, __s = (_s);					\
+	__size_t __n = __bitset_word(_s, __s);				\
+	__size_t __r = __bitset_bitno(_s, __s);				\
+	__typeof((p)->__bits[0]) *__bits = (p)->__bits;			\
 	long __count;							\
 									\
 	__count = 0;							\
-	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
-		__count += __bitcountl((p)->__bits[__i]);		\
+	for (__i = 0; __i < __n; __i++)					\
+		__count += __bitcountl(__bits[__i]);			\
+	if (__r != 0)							\
+		__count += __bitcountl(((1L << __r) - 1) & __bits[__n]);\
 	__count;							\
 })
 
