@@ -116,6 +116,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/counter.h>
+#include <sys/fail.h>
 #include <sys/kernel.h>
 #include <sys/ktr.h>
 #include <sys/lock.h>
@@ -5282,6 +5283,7 @@ get_pv_entry(pmap_t pmap, struct rwlock **lockp)
 	pv_entry_t pv;
 	struct pv_chunk *pc;
 	vm_page_t m;
+	bool fp;
 
 	PMAP_LOCK_ASSERT(pmap, MA_OWNED);
 	PV_STAT(counter_u64_add(pv_entry_allocs, 1));
@@ -5309,8 +5311,11 @@ retry:
 			return (pv);
 		}
 	}
+	fp = false;
+	KFAIL_POINT_CODE(DEBUG_FP, get_pv_entry_reclaim, fp = RETURN_VALUE;);
 	/* No free items, allocate another chunk */
-	m = vm_page_alloc(NULL, 0, VM_ALLOC_NORMAL | VM_ALLOC_NOOBJ |
+	m = fp ? NULL :
+	    vm_page_alloc(NULL, 0, VM_ALLOC_NORMAL | VM_ALLOC_NOOBJ |
 	    VM_ALLOC_WIRED);
 	if (m == NULL) {
 		if (lockp == NULL) {
