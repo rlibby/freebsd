@@ -5148,8 +5148,19 @@ next_chunk:
 		m_pc = SLIST_FIRST(&free);
 		SLIST_REMOVE_HEAD(&free, plinks.s.ss);
 		/* Recycle a freed page table page. */
+		KASSERT(m_pc->ref_count == 0,
+		    ("%s recycled pt page %p has ref_count %#x", __func__,
+		     m_pc, m_pc->ref_count));
+		vm_wire_add(1);
 		m_pc->ref_count = 1;
 	}
+	/*
+	 * A recycled page must look as if it was freshly allocated with
+	 * VM_ALLOC_NOOBJ | VM_ALLOC_WIRED.
+	 */
+	KASSERT(m_pc == NULL || (m_pc->object == NULL &&
+	    (m_pc->oflags & VPO_UNMANAGED) != 0 && m_pc->ref_count == 1),
+	    ("%s: recycled page %p has unexpected state", __func__, m_pc));
 	vm_page_free_pages_toq(&free, true);
 	return (m_pc);
 }
