@@ -2581,6 +2581,7 @@ zone_ctor(void *mem, int size, void *udata, int flags)
 	zone->uz_dtor = arg->dtor;
 	zone->uz_init = NULL;
 	zone->uz_fini = NULL;
+	msema_init(&zone->uz_item_msema, 0);
 	zone->uz_sleeps = 0;
 	zone->uz_bucket_size = 0;
 	zone->uz_bucket_size_min = 0;
@@ -2790,6 +2791,7 @@ zone_dtor(void *arg, int size, void *udata)
 		rw_wunlock(&uma_rwlock);
 		zone_free_item(kegs, keg, NULL, SKIP_NONE);
 	}
+	msema_destroy(&zone->uz_item_msema);
 	counter_u64_free(zone->uz_allocs);
 	counter_u64_free(zone->uz_frees);
 	counter_u64_free(zone->uz_fails);
@@ -3798,6 +3800,7 @@ out:
 	return i;
 }
 
+#if 0
 static int
 zone_alloc_limit_hard(uma_zone_t zone, int count, int flags)
 {
@@ -3950,6 +3953,70 @@ zone_free_limit(uma_zone_t zone, int count)
 	 */
 	wakeup_one(&zone->uz_max_items);
 }
+#else
+
+static int
+zone_alloc_limit_hard(uma_zone_t zone, int count, int flags)
+{
+	int n, ret, sleeps;
+
+	if ((flags & M_NOWAIT) != 0) {
+		zone_log_warning(zone);
+		zone_maxaction(zone);
+		return (0);
+	}
+
+	n = 0;
+	sleeps = 0;
+	atomic_add_32(&zone->uz_sleepers, 1);
+	do {
+		zone_log_warning(zone);
+		zone_maxaction(zone);
+
+		ret = msema_rewait_full(&zone->uz_item_msema, count, &n,
+		    MSEMA_ANY | MSEMA_ONESLEEP, PVM, "zonelimit", 0, &sleeps);
+		MPASS(ret == 0 || ret == EWOULDBLOCK);
+	} while (n == 0);
+
+	atomic_subtract_32(&zone->uz_sleepers, 1);
+	if (sleeps > 0)
+		atomic_add_64(&zone->uz_sleeps, sleeps);
+
+	return (n);
+}
+
+static int
+zone_alloc_limit(uma_zone_t zone, int count, int flags)
+{
+	int n;
+
+	n = msema_trywait_any(&zone->uz_item_msema, count);
+	if (__predict_true(n != 0))
+		return (n);
+
+	return (zone_alloc_limit_hard(zone, count, flags));
+}
+
+static void
+zone_free_limit(uma_zone_t zone, int count)
+{
+	msema_post(&zone->uz_item_msema, count);
+}
+
+static uint64_t
+zone_limit_item_count(uma_zone_t zone)
+{
+	uint64_t limit, avail;
+
+	limit = zone->uz_max_items;
+	if (limit == 0)
+		return (0);
+	avail = msema_count(&zone->uz_item_msema);
+	if (limit > avail)
+		return (limit - avail);
+	return (0);
+}
+#endif
 
 static uma_bucket_t
 zone_alloc_bucket(uma_zone_t zone, void *udata, int domain, int flags)
@@ -4573,11 +4640,24 @@ uma_zone_set_max(uma_zone_t zone, int nitems)
 	 * way to clear a limit.
 	 */
 	ZONE_LOCK(zone);
-	zone->uz_max_items = nitems;
+#if 1
 	zone->uz_flags |= UMA_ZFLAG_LIMIT;
+	msema_adjust(&zone->uz_item_msema, nitems - zone->uz_max_items);
+	/*
+	 * XXX this is probably wrong if we are not setting it to 0 but it
+	 * wasn't before, I think we'll stop posting.  We can probably do
+	 * something that at least doesn't totally fall over.
+	 */
+#endif
+	zone->uz_max_items = nitems;
+#if 0
+	zone->uz_flags |= UMA_ZFLAG_LIMIT;
+#endif
 	zone_update_caches(zone);
+#if 0
 	/* We may need to wake waiters. */
 	wakeup(&zone->uz_max_items);
+#endif
 	ZONE_UNLOCK(zone);
 
 	return (nitems);
@@ -4835,6 +4915,8 @@ uma_zone_reserve_kva(uma_zone_t zone, int count)
 	MPASS(keg->uk_kva == 0);
 	keg->uk_kva = kva;
 	keg->uk_offset = 0;
+	msema_adjust(&zone->uz_item_msema,
+	    (pages * keg->uk_ipers) - zone->uz_max_items);
 	zone->uz_max_items = pages * keg->uk_ipers;
 #ifdef UMA_MD_SMALL_ALLOC
 	keg->uk_allocf = (keg->uk_ppera > 1) ? noobj_alloc : uma_small_alloc;
@@ -5176,7 +5258,11 @@ sysctl_vm_zone_stats(SYSCTL_HANDLER_ARGS)
 			uth.uth_size = kz->uk_size;
 			uth.uth_rsize = kz->uk_rsize;
 			if (z->uz_max_items > 0) {
+#if 0
 				items = UZ_ITEMS_COUNT(z->uz_items);
+#else
+				items = zone_limit_item_count(z);
+#endif
 				uth.uth_pages = (items / kz->uk_ipers) *
 					kz->uk_ppera;
 			} else
@@ -5316,7 +5402,11 @@ sysctl_handle_uma_zone_items(SYSCTL_HANDLER_ARGS)
 	uma_zone_t zone = arg1;
 	uint64_t cur;
 
+#if 0
 	cur = UZ_ITEMS_COUNT(atomic_load_64(&zone->uz_items));
+#else
+	cur = zone_limit_item_count(zone);
+#endif
 	return (sysctl_handle_64(oidp, &cur, 0, req));
 }
 

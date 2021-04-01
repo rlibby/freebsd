@@ -31,6 +31,7 @@
  */
 
 #include <sys/counter.h>
+#include <sys/msema.h>
 #include <sys/_bitset.h>
 #include <sys/_domainset.h>
 #include <sys/_task.h>
@@ -478,7 +479,7 @@ struct uma_zone {
 	void		*uz_arg;	/* Import/release argument. */
 	uma_init	uz_init;	/* Initializer for each item */
 	uma_fini	uz_fini;	/* Finalizer for each item. */
-	volatile uint64_t uz_items;	/* Total items count & sleepers */
+	struct msema	uz_item_msema;	/* Item count semaphore. */
 	uint64_t	uz_sleeps;	/* Total number of alloc sleeps */
 
 	/* Offset 128 Rare stats, misc read-only. */
