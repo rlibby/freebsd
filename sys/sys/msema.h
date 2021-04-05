@@ -171,8 +171,8 @@ msema_adjust(struct msema *msema, int count)
 	if (count > 0) {
 		msema_post(msema, count);
 	} else if (count < 0) {
-		old = atomic_fetchadd_64(&msema->bits, -count);
-		_msema_check_count(MSEMA_BITS_OFFSET_COUNT(old) - count);
+		old = atomic_fetchadd_64(&msema->bits, count);
+		_msema_check_count(MSEMA_BITS_OFFSET_COUNT(old) + count);
 	}
 }
 
