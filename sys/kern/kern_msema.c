@@ -34,9 +34,9 @@
 
 /* External linkage for header inlines. */
 extern inline void msema_adjust(struct msema *msema, int count);
-extern inline uint64_t msema_count(struct msema *msema);
+extern inline int msema_count(struct msema *msema);
 extern inline void msema_destroy(struct msema *msema);
-extern inline void msema_init(struct msema *msema, int value);
+extern inline void msema_init(struct msema *msema, int count);
 extern inline void msema_post(struct msema *msema, int count);
 extern inline void msema_post_one(struct msema *msema);
 extern inline int msema_rewait(struct msema *msema, int count, int flags,

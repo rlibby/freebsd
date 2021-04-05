@@ -65,9 +65,9 @@ struct msema {
 
 /* API */
 inline void msema_adjust(struct msema *msema, int count);
-inline uint64_t msema_count(struct msema *msema);
+inline int msema_count(struct msema *msema);
 inline void msema_destroy(struct msema *msema);
-inline void msema_init(struct msema *msema, int value);
+inline void msema_init(struct msema *msema, int count);
 inline void msema_post(struct msema *msema, int count);
 inline void msema_post_one(struct msema *msema);
 inline int msema_rewait(struct msema *msema, int count, int flags, int pri,
@@ -103,26 +103,26 @@ _msema_check_count(uint64_t cnt)
 }
 
 inline void
-msema_init(struct msema *msema, int value)
+msema_init(struct msema *msema, int count)
 {
-	uint64_t cnt;
+	uint64_t bits;
 
-	cnt = MSEMA_BITS_ZERO_COUNT + value;
-	_msema_check_count(cnt);
-	atomic_store_64(&msema->bits, cnt);
+	bits = MSEMA_BITS_ZERO_COUNT + count;
+	_msema_check_count(bits);
+	atomic_store_64(&msema->bits, bits);
 }
 
 inline void
 msema_destroy(struct msema *msema)
 {
-	uint64_t old;
+	uint64_t bits;
 
-	old = atomic_load_64(&msema->bits);
-	if (MSEMA_BITS_SLEEPERS(old) != 0)
-		panic("msema_destroy with %ju sleepers", (uintmax_t)old);
+	bits = atomic_load_64(&msema->bits);
+	if (MSEMA_BITS_SLEEPERS(bits) != 0)
+		panic("msema_destroy with sleepers: %#jx", (uintmax_t)bits);
 }
 
-inline uint64_t
+inline int
 msema_count(struct msema *msema)
 {
 	uint64_t oldcnt;
