@@ -115,6 +115,15 @@ _lockmgr_args_rw(struct lock *lk, u_int flags, struct rwlock *ilk,
 	    NULL, wmesg, prio, timo, file, line));
 }
 
+static __inline int
+_lockmgr_args_sleepgen(struct lock_sleepgen *lksg, u_int flags, u_int sleepgen,
+    const char *wmesg, int prio, int timo, const char *file, int line)
+{
+
+	return (__lockmgr_args(&lksg->lksg_lock, flags,
+	    (void *)(uintptr_t)sleepgen, wmesg, prio, timo, file, line));
+}
+
 /*
  * Define aliases in order to complete lockmgr KPI.
  */
@@ -173,6 +182,7 @@ _lockmgr_args_rw(struct lock *lk, u_int flags, struct rwlock *ilk,
 #define	LK_TIMELOCK	0x001000
 #define	LK_NODDLKTREAT	0x002000
 #define	LK_ADAPTIVE	0x004000
+#define	LK_SLEEPGEN	0x008000
 
 /*
  * Operations for lockmgr().
@@ -207,6 +217,61 @@ _lockmgr_args_rw(struct lock *lk, u_int flags, struct rwlock *ilk,
 #define	KA_RECURSED	LA_RECURSED
 #define	KA_NOTRECURSED	LA_NOTRECURSED
 #endif
+
+/* XXX organize me */
+#define	LK_SLEEPGEN_INVALID	0
+#define	LK_SLEEPGEN_INIT	1
+#define	LK_SLEEPGEN_INCR	2
+
+#define	_lockmgr_sleepgen_acquire(lksg)	__extension__ ({		\
+	atomic_add_acq_int(&(lksg)->lksg_holders, 1);			\
+	atomic_load_acq_int(&(lksg)->lksg_sleepgen);			\
+})
+
+#define	_lockmgr_sleepgen_release(lksg)					\
+	atomic_add_int(&(lksg)->lksg_holders, -1)
+
+#define	_lockmgr_sleepgen_invalidate(lksg)	do {			\
+	lockmgr_assert(&(lksg)->lksg_lock, KA_LOCKED);			\
+	KASSERT(((lksg)->lksg_sleepgen & 1) == 1,			\
+	    ("lockmgr_sleepgen_invalidate: lock %p bad sleepgen %u",	\
+	    (lksg), (lksg)->lksg_sleepgen));				\
+	atomic_thread_fence_rel();					\
+	if (atomic_load_int(&(lksg)->lksg_holders) != 0)		\
+		_lockmgr_sleepgen_invalidate_hard((lksg));		\
+} while (0)
+
+u_int	lockmgr_sleepgen_acquire(struct lock_sleepgen *);
+void	lockmgr_sleepgen_release(struct lock_sleepgen *);
+void	lockmgr_sleepgen_invalidate(struct lock_sleepgen *);
+void	_lockmgr_sleepgen_invalidate_hard(struct lock_sleepgen *);
+
+/* Macros for inline expansion. */
+#define	lockmgr_sleepgen_acquire(lksg)	_lockmgr_sleepgen_acquire((lksg))
+#define	lockmgr_sleepgen_release(lksg)	_lockmgr_sleepgen_release((lksg))
+#define	lockmgr_sleepgen_invalidate(lksg)				\
+	_lockmgr_sleepgen_invalidate((lksg))
+
+#define	lockmgr_args_sleepgen_cond(lksg, flags, wmesg, prio, timo,	\
+    cond)	__extension__ ({					\
+	int _error;							\
+	u_int _sleepgen;						\
+	_sleepgen = lockmgr_sleepgen_acquire((lksg));			\
+	/* Check cond after acquiring the sleepgen. */			\
+	if (cond) {							\
+		_error = _lockmgr_args_sleepgen((lksg), (flags),	\
+		    _sleepgen, (wmesg), (prio), (timo), LOCK_FILE,	\
+		    LOCK_LINE);						\
+	} else {							\
+		_error = ENOLCK;					\
+	}								\
+	lockmgr_sleepgen_release((lksg));				\
+	_error;								\
+})
+
+#define	lockmgr_sleepgen_cond(lksg, flags, wmesg, cond)			\
+	lockmgr_args_sleepgen_cond((lksg), (flags), (wmesg),		\
+	    LK_PRIO_DEFAULT, LK_TIMO_DEFAULT, (cond))
 
 #endif /* _KERNEL */
 

@@ -46,4 +46,10 @@ struct lock {
 #endif
 };
 
+struct lock_sleepgen {
+	struct lock		lksg_lock;
+	u_int			lksg_holders;
+	u_int			lksg_sleepgen;
+};
+
 #endif

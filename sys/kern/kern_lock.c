@@ -184,6 +184,9 @@ static bool __always_inline lockmgr_slock_try(struct lock *lk, uintptr_t *xp,
     int flags, bool fp);
 static bool __always_inline lockmgr_sunlock_try(struct lock *lk, uintptr_t *xp);
 
+static bool __always_inline lockmgr_sleepgen_valid(struct lock *lk,
+    u_int sleepgen);
+
 static void
 lockmgr_exit(u_int flags, struct lock_object *ilk, int wakeup_swapper)
 {
@@ -581,7 +584,7 @@ lockmgr_slock_adaptive(struct lock_delay_arg *lda, struct lock *lk, uintptr_t *x
 
 static __noinline int
 lockmgr_slock_hard(struct lock *lk, u_int flags, struct lock_object *ilk,
-    const char *file, int line, struct lockmgr_wait *lwa)
+    u_int sleepgen, const char *file, int line, struct lockmgr_wait *lwa)
 {
 	uintptr_t tid, x;
 	int error = 0;
@@ -653,6 +656,14 @@ lockmgr_slock_hard(struct lock *lk, u_int flags, struct lock_object *ilk,
 		 * probabilly will need to manipulate waiters flags.
 		 */
 		sleepq_lock(&lk->lock_object);
+
+		/* Check sleepgen. */
+		if (!lockmgr_sleepgen_valid(lk, sleepgen)) {
+			sleepq_release(&lk->lock_object);
+			error = ENOLCK;
+			break;
+		}
+
 		x = lockmgr_read_value(lk);
 retry_sleepq:
 
@@ -766,7 +777,7 @@ lockmgr_xlock_adaptive(struct lock_delay_arg *lda, struct lock *lk, uintptr_t *x
 
 static __noinline int
 lockmgr_xlock_hard(struct lock *lk, u_int flags, struct lock_object *ilk,
-    const char *file, int line, struct lockmgr_wait *lwa)
+    u_int sleepgen, const char *file, int line, struct lockmgr_wait *lwa)
 {
 	struct lock_class *class;
 	uintptr_t tid, x, v;
@@ -868,6 +879,14 @@ lockmgr_xlock_hard(struct lock *lk, u_int flags, struct lock_object *ilk,
 		 * probabilly will need to manipulate waiters flags.
 		 */
 		sleepq_lock(&lk->lock_object);
+
+		/* Check sleepgen. */
+		if (!lockmgr_sleepgen_valid(lk, sleepgen)) {
+			sleepq_release(&lk->lock_object);
+			error = ENOLCK;
+			break;
+		}
+
 		x = lockmgr_read_value(lk);
 retry_sleepq:
 
@@ -1024,7 +1043,8 @@ lockmgr_upgrade(struct lock *lk, u_int flags, struct lock_object *ilk,
 	}
 
 out_xlock:
-	error = lockmgr_xlock_hard(lk, flags, ilk, file, line, lwa);
+	error = lockmgr_xlock_hard(lk, flags, ilk, LK_SLEEPGEN_INVALID, file,
+	    line, lwa);
 	flags &= ~LK_INTERLOCK;
 out:
 	lockmgr_exit(flags, ilk, 0);
@@ -1043,6 +1063,8 @@ lockmgr_lock_flags(struct lock *lk, u_int flags, struct lock_object *ilk,
 	if (SCHEDULER_STOPPED())
 		return (0);
 
+	/* XXX SLEEPGEN ASSERTS? */
+
 	op = flags & LK_TYPE_MASK;
 	locked = false;
 	switch (op) {
@@ -1058,8 +1080,8 @@ lockmgr_lock_flags(struct lock *lk, u_int flags, struct lock_object *ilk,
 			    file, line, flags);
 			locked = true;
 		} else {
-			return (lockmgr_slock_hard(lk, flags, ilk, file, line,
-			    NULL));
+			return (lockmgr_slock_hard(lk, flags, ilk,
+			    LK_SLEEPGEN_INVALID, file, line, NULL));
 		}
 		break;
 	case LK_EXCLUSIVE:
@@ -1074,8 +1096,8 @@ lockmgr_lock_flags(struct lock *lk, u_int flags, struct lock_object *ilk,
 			    flags);
 			locked = true;
 		} else {
-			return (lockmgr_xlock_hard(lk, flags, ilk, file, line,
-			    NULL));
+			return (lockmgr_xlock_hard(lk, flags, ilk,
+			    LK_SLEEPGEN_INVALID, file, line, NULL));
 		}
 		break;
 	case LK_UPGRADE:
@@ -1243,7 +1265,8 @@ lockmgr_slock(struct lock *lk, u_int flags, const char *file, int line)
 		return (0);
 	}
 
-	return (lockmgr_slock_hard(lk, flags | LK_ADAPTIVE, NULL, file, line, NULL));
+	return (lockmgr_slock_hard(lk, flags | LK_ADAPTIVE, NULL,
+	    LK_SLEEPGEN_INVALID, file, line, NULL));
 }
 
 int
@@ -1264,7 +1287,8 @@ lockmgr_xlock(struct lock *lk, u_int flags, const char *file, int line)
 		return (0);
 	}
 
-	return (lockmgr_xlock_hard(lk, flags | LK_ADAPTIVE, NULL, file, line, NULL));
+	return (lockmgr_xlock_hard(lk, flags | LK_ADAPTIVE, NULL,
+	    LK_SLEEPGEN_INVALID, file, line, NULL));
 }
 
 int
@@ -1299,15 +1323,16 @@ lockmgr_unlock(struct lock *lk)
 }
 
 int
-__lockmgr_args(struct lock *lk, u_int flags, struct lock_object *ilk,
+__lockmgr_args(struct lock *lk, u_int flags, struct lock_object *ilk_,
     const char *wmesg, int pri, int timo, const char *file, int line)
 {
 	GIANT_DECLARE;
 	struct lockmgr_wait lwa;
 	struct lock_class *class;
+	struct lock_object *ilk;
 	const char *iwmesg;
 	uintptr_t tid, v, x;
-	u_int op, realexslp;
+	u_int op, realexslp, sleepgen;
 	int error, ipri, itimo, queue, wakeup_swapper;
 #ifdef LOCK_PROFILING
 	uint64_t waittime = 0;
@@ -1324,6 +1349,14 @@ __lockmgr_args(struct lock *lk, u_int flags, struct lock_object *ilk,
 	ipri = (pri == LK_PRIO_DEFAULT) ? lk->lk_pri : pri;
 	itimo = (timo == LK_TIMO_DEFAULT) ? lk->lk_timo : timo;
 
+	/* XXX may want to push some of this down into slock and xlock hard */
+	ilk = NULL;
+	sleepgen = LK_SLEEPGEN_INVALID;
+	if ((flags & LK_INTERLOCK) != 0)
+		ilk = ilk_;
+	else if ((flags & LK_SLEEPGEN) != 0)
+		sleepgen = (uintptr_t)ilk_;
+
 	lwa.iwmesg = iwmesg;
 	lwa.ipri = ipri;
 	lwa.itimo = itimo;
@@ -1338,6 +1371,15 @@ __lockmgr_args(struct lock *lk, u_int flags, struct lock_object *ilk,
 	KASSERT((flags & LK_INTERLOCK) == 0 || ilk != NULL,
 	    ("%s: LK_INTERLOCK passed without valid interlock @ %s:%d",
 	    __func__, file, line));
+	KASSERT((flags & (LK_INTERLOCK | LK_SLEEPGEN)) !=
+	    (LK_INTERLOCK | LK_SLEEPGEN),
+	    ("%s: Invalid flags (LK_INTERLOCK | LK_SLEEPGEN) @ %s:%d ",
+	     __func__, file, line));
+	KASSERT((flags & LK_SLEEPGEN) == 0 || (sleepgen & 1) == 1,
+	    ("%s: Invalid sleepgen @ %s:%d", __func__, file, line));
+	KASSERT((flags & LK_SLEEPGEN) == 0 || op == LK_SHARED ||
+	    op == LK_EXCLUSIVE,
+	    ("%s: Invalid op with LK_SLEEPGEN @ %s:%d", __func__, file, line));
 	KASSERT(kdb_active != 0 || !TD_IS_IDLETHREAD(curthread),
 	    ("%s: idle thread %p on lockmgr %s @ %s:%d", __func__, curthread,
 	    lk->lock_object.lo_name, file, line));
@@ -1363,14 +1405,16 @@ __lockmgr_args(struct lock *lk, u_int flags, struct lock_object *ilk,
 	wakeup_swapper = 0;
 	switch (op) {
 	case LK_SHARED:
-		return (lockmgr_slock_hard(lk, flags, ilk, file, line, &lwa));
+		return (lockmgr_slock_hard(lk, flags, ilk, sleepgen, file,
+		    line, &lwa));
 		break;
 	case LK_UPGRADE:
 	case LK_TRYUPGRADE:
 		return (lockmgr_upgrade(lk, flags, ilk, file, line, &lwa));
 		break;
 	case LK_EXCLUSIVE:
-		return (lockmgr_xlock_hard(lk, flags, ilk, file, line, &lwa));
+		return (lockmgr_xlock_hard(lk, flags, ilk, sleepgen, file,
+		    line, &lwa));
 		break;
 	case LK_DOWNGRADE:
 		_lockmgr_assert(lk, KA_XLOCKED, file, line);
@@ -1651,6 +1695,71 @@ _lockmgr_disown(struct lock *lk, const char *file, int line)
 			return;
 		cpu_spinwait();
 	}
+}
+
+static __always_inline bool
+lockmgr_sleepgen_valid(struct lock *lk, u_int sleepgen)
+{
+	return (sleepgen == LK_SLEEPGEN_INVALID ||
+	    atomic_load_int(&((struct lock_sleepgen *)lk)->lksg_sleepgen) ==
+	    sleepgen);
+}
+
+static void
+lockmgr_wakeall(struct lock *lk)
+{
+	uintptr_t x, v;
+	int wakeup_swapper;
+
+	wakeup_swapper = 0;
+
+	sleepq_lock(&lk->lock_object);
+	lk->lk_exslpfail = 0;
+	for (;;) {
+		x = lockmgr_read_value(lk);
+		v = x & ~LK_ALL_WAITERS;
+		if (x == v || atomic_fcmpset_ptr(&lk->lk_lock, &x, v))
+			break;
+		cpu_spinwait();
+	}
+	if ((x & LK_EXCLUSIVE_WAITERS) != 0) {
+		wakeup_swapper |= sleepq_broadcast(&lk->lock_object,
+		    SLEEPQ_LK, 0, SQ_EXCLUSIVE_QUEUE);
+	}
+	if ((x & LK_SHARED_WAITERS) != 0) {
+		wakeup_swapper |= sleepq_broadcast(&lk->lock_object,
+		    SLEEPQ_LK, 0, SQ_SHARED_QUEUE);
+	}
+	sleepq_release(&lk->lock_object);
+
+	if (wakeup_swapper)
+		kick_proc0();
+}
+
+void
+_lockmgr_sleepgen_invalidate_hard(struct lock_sleepgen *lksg)
+{
+	atomic_add_int(&lksg->lksg_sleepgen, LK_SLEEPGEN_INCR);
+	lockmgr_wakeall(&lksg->lksg_lock);
+}
+
+u_int (
+lockmgr_sleepgen_acquire)(struct lock_sleepgen *lksg)
+{
+	return _lockmgr_sleepgen_acquire(lksg);
+}
+
+void (
+lockmgr_sleepgen_release)(struct lock_sleepgen *lksg)
+{
+	_lockmgr_sleepgen_release(lksg);
+}
+
+
+void (
+lockmgr_sleepgen_invalidate)(struct lock_sleepgen *lksg)
+{
+	_lockmgr_sleepgen_invalidate(lksg);
 }
 
 void
