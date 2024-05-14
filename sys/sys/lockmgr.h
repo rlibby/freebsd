@@ -208,6 +208,53 @@ _lockmgr_args_rw(struct lock *lk, u_int flags, struct rwlock *ilk,
 #define	KA_NOTRECURSED	LA_NOTRECURSED
 #endif
 
+/* XXX organize me */
+#define	LK_CONDWAIT	0x008000
+typedef bool (*lockmgr_condwait_cb)(void *arg);
+struct lockmgr_condwait_args {
+	u_int *			lkcw_holders;
+	lockmgr_condwait_cb	lkcw_cb;
+	void *			lkcw_cbarg;
+};
+
+#define	_lockmgr_condwait_wakeup(lk, lkcw_holders)	do {		\
+	lockmgr_assert((lk), KA_LOCKED);				\
+	atomic_thread_fence_rel();					\
+	if (atomic_load_int(lkcw_holders) != 0)				\
+		_lockmgr_condwait_wakeup_hard((lk));			\
+} while (0)
+
+void	lockmgr_condwait_wakeup(struct lock *, u_int *);
+void	_lockmgr_condwait_wakeup_hard(struct lock *);
+
+/* Macros for inline expansion. */
+#define	lockmgr_condwait_wakeup(lk, lkcw_holders)			\
+	_lockmgr_condwait_wakeup((lk), (lkcw_holders))
+
+static __inline int
+_lockmgr_args_condwait(struct lock *lk, u_int flags, const char *wmesg, int
+    prio, int timo, const char *file, int line, u_int *holders,
+    lockmgr_condwait_cb cb, void *cbarg)
+{
+	struct lockmgr_condwait_args lkcw = {
+		.lkcw_holders = holders,
+		.lkcw_cb = cb,
+		.lkcw_cbarg = cbarg,
+	};
+
+	return (__lockmgr_args(lk, flags | LK_CONDWAIT, (void *)&lkcw, wmesg,
+	    prio, timo, file, line));
+}
+
+#define	lockmgr_args_condwait(lk, flags, wmesg, prio, timo, holders,	\
+    cb, cbarg)								\
+	_lockmgr_args_condwait((lk), (flags), (wmesg), (prio), (timo),	\
+	    LOCK_FILE, LOCK_LINE, (holders), (cb), (cbarg))
+
+#define	lockmgr_condwait(lk, flags, wmesg, holders, cb, cbarg)		\
+	lockmgr_args_condwait((lk), (flags), (wmesg), LK_PRIO_DEFAULT,	\
+	    LK_TIMO_DEFAULT, (holders), (cb), (cbarg))
+
 #endif /* _KERNEL */
 
 #endif /* !_SYS_LOCKMGR_H_ */
