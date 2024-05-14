@@ -46,4 +46,13 @@ struct lock {
 #endif
 };
 
+#ifdef _KERNEL
+typedef bool (*lockmgr_condwait_cb_t)(void *arg);
+
+struct lockmgr_condwait_args {
+	lockmgr_condwait_cb_t	lkcw_cb;
+	void *			lkcw_cbarg;
+};
+#endif /* _KERNEL */
+
 #endif

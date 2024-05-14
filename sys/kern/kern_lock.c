@@ -143,6 +143,12 @@ LK_CAN_SHARE(uintptr_t x, int flags, bool fp)
 
 #define	lockmgr_xlocked(lk) lockmgr_xlocked_v(lockmgr_read_value(lk))
 
+#define	lockmgr_condwait_can_wait(lkcw)					\
+	__predict_true(lkcw == NULL || (lkcw)->lkcw_cb((lkcw)->lkcw_cbarg))
+
+#define	lockmgr_condwait_log_reject(lk, when)				\
+	LOCK_LOG2((lk), "%s: %p condwait rejected " when, __func__, (lk))
+
 static void	assert_lockmgr(const struct lock_object *lock, int how);
 #ifdef DDB
 static void	db_show_lockmgr(const struct lock_object *lock);
@@ -580,9 +586,11 @@ lockmgr_slock_adaptive(struct lock_delay_arg *lda, struct lock *lk, uintptr_t *x
 }
 
 static __noinline int
-lockmgr_slock_hard(struct lock *lk, u_int flags, struct lock_object *ilk,
+lockmgr_slock_hard(struct lock *lk, u_int flags, struct lock_object *ilku,
     const char *file, int line, struct lockmgr_wait *lwa)
 {
+	struct lock_object *ilk = NULL;
+	struct lockmgr_condwait_args *lkcw = NULL;
 	uintptr_t tid, x;
 	int error = 0;
 	const char *iwmesg;
@@ -601,6 +609,11 @@ lockmgr_slock_hard(struct lock *lk, u_int flags, struct lock_object *ilk,
 		goto out;
 
 	tid = (uintptr_t)curthread;
+
+	if ((flags & LK_INTERLOCK) != 0)
+		ilk = ilku;
+	else if ((flags & LK_CONDWAIT) != 0)
+		lkcw = (void *)ilku;
 
 	if (LK_CAN_WITNESS(flags))
 		WITNESS_CHECKORDER(&lk->lock_object, LOP_NEWORDER,
@@ -628,7 +641,8 @@ lockmgr_slock_hard(struct lock *lk, u_int flags, struct lock_object *ilk,
 		lock_profile_obtain_lock_failed(&lk->lock_object, false,
 		    &contested, &waittime);
 
-		if ((flags & (LK_ADAPTIVE | LK_INTERLOCK)) == LK_ADAPTIVE) {
+		if ((flags & (LK_ADAPTIVE | LK_INTERLOCK | LK_CONDWAIT)) ==
+		    LK_ADAPTIVE) {
 			if (lockmgr_slock_adaptive(&lda, lk, &x, flags))
 				continue;
 		}
@@ -649,10 +663,21 @@ lockmgr_slock_hard(struct lock *lk, u_int flags, struct lock_object *ilk,
 		}
 
 		/*
+		 * For LK_CONDWAIT, do an early sleep check to reduce the
+		 * chance of setting the waiter flag and then bailing.
+		 */
+		if (!lockmgr_condwait_can_wait(lkcw)) {
+			lockmgr_condwait_log_reject(lk, "early");
+			error = ENOLCK;
+			break;
+		}
+
+		/*
 		 * Acquire the sleepqueue chain lock because we
 		 * probabilly will need to manipulate waiters flags.
 		 */
 		sleepq_lock(&lk->lock_object);
+
 		x = lockmgr_read_value(lk);
 retry_sleepq:
 
@@ -676,6 +701,17 @@ retry_sleepq:
 			}
 			LOCK_LOG2(lk, "%s: %p set shared waiters flag",
 			    __func__, lk);
+		}
+
+		/* For LK_CONDWAIT, the callback can reject the sleep. */
+		if (lkcw != NULL) {
+			atomic_thread_fence_acq();
+			if (!lockmgr_condwait_can_wait(lkcw)) {
+				sleepq_release(&lk->lock_object);
+				lockmgr_condwait_log_reject(lk, "late");
+				error = ENOLCK;
+				break;
+			}
 		}
 
 		if (lwa == NULL) {
@@ -765,10 +801,12 @@ lockmgr_xlock_adaptive(struct lock_delay_arg *lda, struct lock *lk, uintptr_t *x
 }
 
 static __noinline int
-lockmgr_xlock_hard(struct lock *lk, u_int flags, struct lock_object *ilk,
+lockmgr_xlock_hard(struct lock *lk, u_int flags, struct lock_object *ilku,
     const char *file, int line, struct lockmgr_wait *lwa)
 {
 	struct lock_class *class;
+	struct lock_object *ilk = NULL;
+	struct lockmgr_condwait_args *lkcw = NULL;
 	uintptr_t tid, x, v;
 	int error = 0;
 	const char *iwmesg;
@@ -787,6 +825,11 @@ lockmgr_xlock_hard(struct lock *lk, u_int flags, struct lock_object *ilk,
 		goto out;
 
 	tid = (uintptr_t)curthread;
+
+	if ((flags & LK_INTERLOCK) != 0)
+		ilk = ilku;
+	else if ((flags & LK_CONDWAIT) != 0)
+		lkcw = (void *)ilku;
 
 	if (LK_CAN_WITNESS(flags))
 		WITNESS_CHECKORDER(&lk->lock_object, LOP_NEWORDER |
@@ -844,7 +887,8 @@ lockmgr_xlock_hard(struct lock *lk, u_int flags, struct lock_object *ilk,
 		lock_profile_obtain_lock_failed(&lk->lock_object, false,
 		    &contested, &waittime);
 
-		if ((flags & (LK_ADAPTIVE | LK_INTERLOCK)) == LK_ADAPTIVE) {
+		if ((flags & (LK_ADAPTIVE | LK_INTERLOCK | LK_CONDWAIT)) ==
+		    LK_ADAPTIVE) {
 			if (lockmgr_xlock_adaptive(&lda, lk, &x))
 				continue;
 		}
@@ -864,10 +908,21 @@ lockmgr_xlock_hard(struct lock *lk, u_int flags, struct lock_object *ilk,
 		}
 
 		/*
+		 * For LK_CONDWAIT, do an early sleep check to reduce the
+		 * chance of setting the waiter flag and then bailing.
+		 */
+		if (!lockmgr_condwait_can_wait(lkcw)) {
+			lockmgr_condwait_log_reject(lk, "early");
+			error = ENOLCK;
+			break;
+		}
+
+		/*
 		 * Acquire the sleepqueue chain lock because we
 		 * probabilly will need to manipulate waiters flags.
 		 */
 		sleepq_lock(&lk->lock_object);
+
 		x = lockmgr_read_value(lk);
 retry_sleepq:
 
@@ -914,6 +969,17 @@ retry_sleepq:
 			}
 			LOCK_LOG2(lk, "%s: %p set excl waiters flag",
 			    __func__, lk);
+		}
+
+		/* For LK_CONDWAIT, the callback can reject the sleep. */
+		if (lkcw != NULL) {
+			atomic_thread_fence_acq();
+			if (!lockmgr_condwait_can_wait(lkcw)) {
+				sleepq_release(&lk->lock_object);
+				lockmgr_condwait_log_reject(lk, "late");
+				error = ENOLCK;
+				break;
+			}
 		}
 
 		if (lwa == NULL) {
@@ -1042,6 +1108,10 @@ lockmgr_lock_flags(struct lock *lk, u_int flags, struct lock_object *ilk,
 
 	if (SCHEDULER_STOPPED())
 		return (0);
+
+	KASSERT((flags & LK_CONDWAIT) == 0,
+	    ("%s: LK_CONDWAIT not implemented @ %s:%d ", __func__, file,
+	     line));
 
 	op = flags & LK_TYPE_MASK;
 	locked = false;
@@ -1232,6 +1302,7 @@ lockmgr_slock(struct lock *lk, u_int flags, const char *file, int line)
 
 	MPASS((flags & LK_TYPE_MASK) == LK_SHARED);
 	MPASS((flags & LK_INTERLOCK) == 0);
+	MPASS((flags & LK_CONDWAIT) == 0);
 	MPASS((lk->lock_object.lo_flags & LK_NOSHARE) == 0);
 
 	if (LK_CAN_WITNESS(flags))
@@ -1253,6 +1324,7 @@ lockmgr_xlock(struct lock *lk, u_int flags, const char *file, int line)
 
 	MPASS((flags & LK_TYPE_MASK) == LK_EXCLUSIVE);
 	MPASS((flags & LK_INTERLOCK) == 0);
+	MPASS((flags & LK_CONDWAIT) == 0);
 
 	if (LK_CAN_WITNESS(flags))
 		WITNESS_CHECKORDER(&lk->lock_object, LOP_NEWORDER |
@@ -1299,12 +1371,13 @@ lockmgr_unlock(struct lock *lk)
 }
 
 int
-__lockmgr_args(struct lock *lk, u_int flags, struct lock_object *ilk,
+__lockmgr_args(struct lock *lk, u_int flags, struct lock_object *ilku,
     const char *wmesg, int pri, int timo, const char *file, int line)
 {
 	GIANT_DECLARE;
 	struct lockmgr_wait lwa;
 	struct lock_class *class;
+	struct lock_object *ilk;
 	const char *iwmesg;
 	uintptr_t tid, v, x;
 	u_int op, realexslp;
@@ -1320,6 +1393,7 @@ __lockmgr_args(struct lock *lk, u_int flags, struct lock_object *ilk,
 	error = 0;
 	tid = (uintptr_t)curthread;
 	op = (flags & LK_TYPE_MASK);
+	ilk = (flags & LK_INTERLOCK) != 0 ? ilku : NULL;
 	iwmesg = (wmesg == LK_WMESG_DEFAULT) ? lk->lock_object.lo_name : wmesg;
 	ipri = (pri == LK_PRIO_DEFAULT) ? lk->lk_pri : pri;
 	itimo = (timo == LK_TIMO_DEFAULT) ? lk->lk_timo : timo;
@@ -1337,6 +1411,16 @@ __lockmgr_args(struct lock *lk, u_int flags, struct lock_object *ilk,
 	    __func__, file, line));
 	KASSERT((flags & LK_INTERLOCK) == 0 || ilk != NULL,
 	    ("%s: LK_INTERLOCK passed without valid interlock @ %s:%d",
+	    __func__, file, line));
+	KASSERT((flags & (LK_INTERLOCK | LK_CONDWAIT)) !=
+	    (LK_INTERLOCK | LK_CONDWAIT),
+	    ("%s: Invalid flags (LK_INTERLOCK | LK_CONDWAIT) @ %s:%d ",
+	     __func__, file, line));
+	KASSERT((flags & LK_CONDWAIT) == 0 || op == LK_SHARED ||
+	    op == LK_EXCLUSIVE,
+	    ("%s: Invalid op with LK_CONDWAIT @ %s:%d", __func__, file, line));
+	KASSERT((flags & LK_CONDWAIT) == 0 || ilku != NULL,
+	    ("%s: LK_CONDWAIT passed without callback args @ %s:%d",
 	    __func__, file, line));
 	KASSERT(kdb_active != 0 || !TD_IS_IDLETHREAD(curthread),
 	    ("%s: idle thread %p on lockmgr %s @ %s:%d", __func__, curthread,
@@ -1363,14 +1447,14 @@ __lockmgr_args(struct lock *lk, u_int flags, struct lock_object *ilk,
 	wakeup_swapper = 0;
 	switch (op) {
 	case LK_SHARED:
-		return (lockmgr_slock_hard(lk, flags, ilk, file, line, &lwa));
+		return (lockmgr_slock_hard(lk, flags, ilku, file, line, &lwa));
 		break;
 	case LK_UPGRADE:
 	case LK_TRYUPGRADE:
 		return (lockmgr_upgrade(lk, flags, ilk, file, line, &lwa));
 		break;
 	case LK_EXCLUSIVE:
-		return (lockmgr_xlock_hard(lk, flags, ilk, file, line, &lwa));
+		return (lockmgr_xlock_hard(lk, flags, ilku, file, line, &lwa));
 		break;
 	case LK_DOWNGRADE:
 		_lockmgr_assert(lk, KA_XLOCKED, file, line);
@@ -1651,6 +1735,43 @@ _lockmgr_disown(struct lock *lk, const char *file, int line)
 			return;
 		cpu_spinwait();
 	}
+}
+
+static void
+lockmgr_wakeall(struct lock *lk)
+{
+	uintptr_t x, v;
+	int wakeup_swapper;
+
+	wakeup_swapper = 0;
+
+	sleepq_lock(&lk->lock_object);
+	lk->lk_exslpfail = 0;
+	for (;;) {
+		x = lockmgr_read_value(lk);
+		v = x & ~LK_ALL_WAITERS;
+		if (x == v || atomic_fcmpset_ptr(&lk->lk_lock, &x, v))
+			break;
+		cpu_spinwait();
+	}
+	if ((x & LK_EXCLUSIVE_WAITERS) != 0) {
+		wakeup_swapper |= sleepq_broadcast(&lk->lock_object,
+		    SLEEPQ_LK, 0, SQ_EXCLUSIVE_QUEUE);
+	}
+	if ((x & LK_SHARED_WAITERS) != 0) {
+		wakeup_swapper |= sleepq_broadcast(&lk->lock_object,
+		    SLEEPQ_LK, 0, SQ_SHARED_QUEUE);
+	}
+	sleepq_release(&lk->lock_object);
+
+	if (wakeup_swapper)
+		kick_proc0();
+}
+
+void
+_lockmgr_condwait_wakeup_hard(struct lock *lk)
+{
+	lockmgr_wakeall(lk);
 }
 
 void

@@ -36,6 +36,10 @@
 #include <sys/_mutex.h>
 #include <sys/_rwlock.h>
 
+#ifdef _KERNEL
+#include <machine/atomic.h>
+#endif
+
 #define	LK_SHARE			0x01
 #define	LK_SHARED_WAITERS		0x02
 #define	LK_EXCLUSIVE_WAITERS		0x04
@@ -90,6 +94,7 @@ void	 lockinit(struct lock *lk, int prio, const char *wmesg, int timo,
 #ifdef DDB
 int	 lockmgr_chain(struct thread *td, struct thread **ownerp);
 #endif
+void	 _lockmgr_condwait_wakeup_hard(struct lock *);
 void	 lockmgr_printinfo(const struct lock *lk);
 int	 lockstatus(const struct lock *lk);
 
@@ -115,6 +120,27 @@ _lockmgr_args_rw(struct lock *lk, u_int flags, struct rwlock *ilk,
 	    NULL, wmesg, prio, timo, file, line));
 }
 
+static __inline int
+_lockmgr_args_condwait(struct lock *lk, u_int flags, const char *wmesg,
+    int prio, int timo, const char *file, int line, lockmgr_condwait_cb_t cb,
+    void *cbarg)
+{
+	struct lockmgr_condwait_args lkcw = {
+		.lkcw_cb = cb,
+		.lkcw_cbarg = cbarg,
+	};
+
+	return (__lockmgr_args(lk, flags, (void *)&lkcw, wmesg, prio, timo,
+	    file, line));
+}
+
+#define	_lockmgr_condwait_wakeup(lk)	do {				\
+	lockmgr_assert((lk), KA_LOCKED);				\
+	atomic_thread_fence_rel();					\
+	if ((lockmgr_read_value((lk)) & LK_ALL_WAITERS) != 0)		\
+		_lockmgr_condwait_wakeup_hard((lk));			\
+} while (0)
+
 /*
  * Define aliases in order to complete lockmgr KPI.
  */
@@ -128,6 +154,15 @@ _lockmgr_args_rw(struct lock *lk, u_int flags, struct rwlock *ilk,
 #define	lockmgr_args_rw(lk, flags, ilk, wmesg, prio, timo)		\
 	_lockmgr_args_rw((lk), (flags), (ilk), (wmesg), (prio), (timo),	\
 	    LOCK_FILE, LOCK_LINE)
+#define	lockmgr_args_condwait(lk, flags, wmesg, prio, timo, cb, cbarg)	\
+	_lockmgr_args_condwait((lk), (flags) | LK_CONDWAIT, (wmesg),	\
+	    (prio), (timo), LOCK_FILE, LOCK_LINE, (cb), (cbarg))
+#define	lockmgr_condwait(lk, flags, cb, cbarg)				\
+	_lockmgr_args_condwait((lk), (flags) | LK_CONDWAIT,		\
+	    LK_WMESG_DEFAULT, LK_PRIO_DEFAULT, LK_TIMO_DEFAULT,		\
+	    LOCK_FILE, LOCK_LINE, (cb), (cbarg))
+#define	lockmgr_condwait_wakeup(lk)					\
+	_lockmgr_condwait_wakeup((lk))
 #define	lockmgr_disown(lk)						\
 	_lockmgr_disown((lk), LOCK_FILE, LOCK_LINE)
 #define	lockmgr_disowned_v(v)						\
@@ -173,6 +208,7 @@ _lockmgr_args_rw(struct lock *lk, u_int flags, struct rwlock *ilk,
 #define	LK_TIMELOCK	0x001000
 #define	LK_NODDLKTREAT	0x002000
 #define	LK_ADAPTIVE	0x004000
+#define	LK_CONDWAIT	0x008000
 
 /*
  * Operations for lockmgr().
