@@ -950,8 +950,8 @@ MTX_SYSINIT(softdep_lock, &lk, "global softdep", MTX_DEF);
 #define LOCK_OWNED(ump)		rw_assert(&(ump)->um_softdep->sd_fslock, \
 				    RA_WLOCKED)
 
-#define	BUF_AREC(bp)		lockallowrecurse(&(bp)->b_lock)
-#define	BUF_NOREC(bp)		lockdisablerecurse(&(bp)->b_lock)
+#define	BUF_AREC(bp)		lockallowrecurse(&(bp)->b_lock.lksg_lock)
+#define	BUF_NOREC(bp)		lockdisablerecurse(&(bp)->b_lock.lksg_lock)
 
 /*
  * Worklist queue management.

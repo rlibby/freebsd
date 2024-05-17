@@ -3977,7 +3977,7 @@ getblkx(struct vnode *vp, daddr_t blkno, daddr_t dblkno, int size, int slpflag,
 	struct buf *bp;
 	struct bufobj *bo;
 	daddr_t d_blkno;
-	int bsize, error, maxsize, vmio;
+	int bsize, error, lockflags, maxsize, vmio;
 	off_t offset;
 
 	CTR3(KTR_BUF, "getblk(%p, %ld, %d)", vp, (long)blkno, size);
@@ -4031,7 +4031,15 @@ getblkx(struct vnode *vp, daddr_t blkno, daddr_t dblkno, int size, int slpflag,
 		 */
 		if ((flags & GB_LOCK_NOWAIT) != 0)
 			return (error);
-		goto loop;
+
+		lockflags = LK_EXCLUSIVE;
+#ifdef WITNESS
+		lockflags |= (flags & GB_NOWITNESS) != 0 ? LK_NOWITNESS : 0;
+#endif
+		error = BUF_TIMELOCK_SLEEPGEN(bp, bo, blkno, lockflags,
+		    "getblkusg", 0, 0);
+		if (error != 0)
+			goto loop;
 	}
 
 	/* Verify buf identify has not changed since lookup. */
@@ -4049,8 +4057,6 @@ loop:
 	BO_RLOCK(bo);
 	bp = gbincore(bo, blkno);
 	if (bp != NULL) {
-		int lockflags;
-
 		/*
 		 * Buffer is in-core.  If the buffer is not busy nor managed,
 		 * it must be on a queue.

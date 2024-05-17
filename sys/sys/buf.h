@@ -115,7 +115,7 @@ struct buf {
 	uint16_t	b_subqueue;	/* (Q) per-cpu q if any */
 	uint32_t	b_flags;	/* B_* flags. */
 	b_xflags_t b_xflags;		/* extra flags */
-	struct lock b_lock;		/* Buffer lock */
+	struct lock_sleepgen b_lock;	/* Buffer lock */
 	long	b_bufsize;		/* Allocated buffer size. */
 	int	b_runningbufspace;	/* when I/O is running, pipelining */
 	int	b_kvasize;		/* size of kva for buffer */
@@ -295,24 +295,45 @@ struct buf {
 /*
  * Initialize a lock.
  */
-#define BUF_LOCKINIT(bp, wmesg)						\
-	lockinit(&(bp)->b_lock, PRIBIO + 4, wmesg, 0, LK_NEW)
+#define BUF_LOCKINIT(bp, wmesg)	do {					\
+	lockinit(&(bp)->b_lock.lksg_lock, PRIBIO + 4, wmesg, 0, LK_NEW);\
+	(bp)->b_lock.lksg_holders = 0;					\
+	(bp)->b_lock.lksg_sleepgen = LK_SLEEPGEN_INIT;			\
+} while (0)
 /*
  *
  * Get a lock sleeping non-interruptably until it becomes available.
  */
 #define	BUF_LOCK(bp, locktype, interlock)				\
-	_lockmgr_args_rw(&(bp)->b_lock, (locktype), (interlock),	\
-	    LK_WMESG_DEFAULT, LK_PRIO_DEFAULT, LK_TIMO_DEFAULT,		\
-	    LOCK_FILE, LOCK_LINE)
+	_lockmgr_args_rw(&(bp)->b_lock.lksg_lock, (locktype),		\
+	    (interlock), LK_WMESG_DEFAULT, LK_PRIO_DEFAULT,		\
+	    LK_TIMO_DEFAULT, LOCK_FILE, LOCK_LINE)
 
 /*
  * Get a lock sleeping with specified interruptably and timeout.
  */
 #define	BUF_TIMELOCK(bp, locktype, interlock, wmesg, catch, timo)	\
-	_lockmgr_args_rw(&(bp)->b_lock, (locktype) | LK_TIMELOCK,	\
-	    (interlock), (wmesg), (PRIBIO + 4) | (catch), (timo),	\
-	    LOCK_FILE, LOCK_LINE)
+	_lockmgr_args_rw(&(bp)->b_lock.lksg_lock,			\
+	    (locktype) | LK_TIMELOCK, (interlock), (wmesg),		\
+	    (PRIBIO + 4) | (catch), (timo), LOCK_FILE, LOCK_LINE)
+
+/*
+ * Get a lock sleeping with specified interruptably and timeout without holding
+ * the bufobj interlock.  The bufobj and lblkno used in the lookup of the buf
+ * must be passed in as bo and lblkno, but they must not be derived from the
+ * buf itself.
+ */
+#define	BUF_TIMELOCK_SLEEPGEN(bp, bo, lblkno, locktype, wmesg, catch,	\
+    timo) __extension__ ({						\
+	KASSERT(&(bo) != &(bp)->b_bufobj &&				\
+	    &(lblkno) != &(bp)->b_lblkno,				\
+	    ("%s: buf identity check must not reference self",		\
+	     __func__));						\
+	lockmgr_args_sleepgen_cond(&(bp)->b_lock,			\
+	    (locktype) | LK_TIMELOCK, (wmesg), (PRIBIO + 4) | (catch),	\
+	    (timo),							\
+	    (bp)->b_bufobj == (bo) && (bp)->b_lblkno == (lblkno));	\
+})
 
 /*
  * Release a lock. Only the acquiring process may free the lock unless
@@ -325,7 +346,7 @@ struct buf {
 	BUF_UNLOCK_RAW((bp));						\
 } while (0)
 #define	BUF_UNLOCK_RAW(bp) do {						\
-	(void)_lockmgr_args(&(bp)->b_lock, LK_RELEASE, NULL,		\
+	(void)_lockmgr_args(&(bp)->b_lock.lksg_lock, LK_RELEASE, NULL,	\
 	    LK_WMESG_DEFAULT, LK_PRIO_DEFAULT, LK_TIMO_DEFAULT,		\
 	    LOCK_FILE, LOCK_LINE);					\
 } while (0)
@@ -334,44 +355,42 @@ struct buf {
  * Check if a buffer lock is recursed.
  */
 #define	BUF_LOCKRECURSED(bp)						\
-	lockmgr_recursed(&(bp)->b_lock)
+	lockmgr_recursed(&(bp)->b_lock.lksg_lock)
 
 /*
  * Check if a buffer lock is currently held.
  */
 #define	BUF_ISLOCKED(bp)						\
-	lockstatus(&(bp)->b_lock)
+	lockstatus(&(bp)->b_lock.lksg_lock)
 
 /*
  * Check if a buffer lock is currently held by LK_KERNPROC.
  */
 #define	BUF_DISOWNED(bp)						\
-	lockmgr_disowned(&(bp)->b_lock)
+	lockmgr_disowned(&(bp)->b_lock.lksg_lock)
 
 /*
  * Free a buffer lock.
  */
 #define BUF_LOCKFREE(bp) 						\
-	lockdestroy(&(bp)->b_lock)
+	lockdestroy(&(bp)->b_lock.lksg_lock)
 
 /*
  * Print informations on a buffer lock.
  */
 #define BUF_LOCKPRINTINFO(bp) 						\
-	lockmgr_printinfo(&(bp)->b_lock)
+	lockmgr_printinfo(&(bp)->b_lock.lksg_lock)
 
 /*
  * Buffer lock assertions.
  */
 #if defined(INVARIANTS) && defined(INVARIANT_SUPPORT)
-#define	BUF_ASSERT_LOCKED(bp)						\
-	_lockmgr_assert(&(bp)->b_lock, KA_LOCKED, LOCK_FILE, LOCK_LINE)
-#define	BUF_ASSERT_SLOCKED(bp)						\
-	_lockmgr_assert(&(bp)->b_lock, KA_SLOCKED, LOCK_FILE, LOCK_LINE)
-#define	BUF_ASSERT_XLOCKED(bp)						\
-	_lockmgr_assert(&(bp)->b_lock, KA_XLOCKED, LOCK_FILE, LOCK_LINE)
-#define	BUF_ASSERT_UNLOCKED(bp)						\
-	_lockmgr_assert(&(bp)->b_lock, KA_UNLOCKED, LOCK_FILE, LOCK_LINE)
+#define	_BUF_ASSERT_LOCKED(bp, how)					\
+	_lockmgr_assert(&(bp)->b_lock.lksg_lock, (how), LOCK_FILE, LOCK_LINE)
+#define	BUF_ASSERT_LOCKED(bp)	_BUF_ASSERT_LOCKED((bp), KA_LOCKED)
+#define	BUF_ASSERT_SLOCKED(bp)	_BUF_ASSERT_LOCKED((bp), KA_SLOCKED)
+#define	BUF_ASSERT_XLOCKED(bp)	_BUF_ASSERT_LOCKED((bp), KA_XLOCKED)
+#define	BUF_ASSERT_UNLOCKED(bp)	_BUF_ASSERT_LOCKED((bp), KA_UNLOCKED)
 #else
 #define	BUF_ASSERT_LOCKED(bp)
 #define	BUF_ASSERT_SLOCKED(bp)
@@ -387,7 +406,7 @@ struct buf {
  * wait until the I/O is completed and the lock has been freed by biodone.
  */
 #define	BUF_KERNPROC(bp)						\
-	_lockmgr_disown(&(bp)->b_lock, LOCK_FILE, LOCK_LINE)
+	_lockmgr_disown(&(bp)->b_lock.lksg_lock, LOCK_FILE, LOCK_LINE)
 #endif
 
 #endif /* _KERNEL */

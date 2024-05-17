@@ -2881,6 +2881,8 @@ brelvp(struct buf *bp)
 	bp->b_vp = NULL;
 	bp->b_bufobj = NULL;
 	BO_UNLOCK(bo);
+	/* Wakeup / keep up any buf lockers without the bufobj lock. */
+	lockmgr_sleepgen_invalidate(&bp->b_lock);
 	vdrop(vp);
 }
 
