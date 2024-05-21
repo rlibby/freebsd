@@ -202,6 +202,11 @@ SYSCTL_ULONG(_vm, OID_AUTO, max_user_wired, CTLFLAG_RW,
     &vm_page_max_user_wired, 0,
     "system-wide limit to user-wired page count");
 
+static u_int vm_pageout_scan_inactive_drop = 0;
+SYSCTL_UINT(_vm, OID_AUTO, pageout_scan_inactive_drop, CTLFLAG_RWTUN,
+    &vm_pageout_scan_inactive_drop, 0,
+    "do a drop of the object lock");
+
 static u_int isqrt(u_int num);
 static int vm_pageout_launder(struct vm_domain *vmd, int launder,
     bool in_shortfall);
@@ -1451,7 +1456,20 @@ vm_pageout_scan_inactive(struct vm_domain *vmd, int page_shortage)
 	pq = &vmd->vmd_pagequeues[PQ_INACTIVE];
 	vm_pagequeue_lock(pq);
 	vm_pageout_init_scan(&ss, pq, marker, NULL, pq->pq_cnt);
-	while (page_shortage > 0 && (m = vm_pageout_next(&ss, true)) != NULL) {
+	while (page_shortage > 0) {
+		if (object != NULL && ss.bq.bq_cnt == 0 &&
+		    vm_pageout_scan_inactive_drop) {
+			/*
+			 * Release an optimistically held object lock before
+			 * refilling the batch queue.
+			 */
+			VM_OBJECT_WUNLOCK(object);
+			object = NULL;
+		}
+
+		m = vm_pageout_next(&ss, true);
+		if (m == NULL)
+			break;
 		KASSERT((m->flags & PG_MARKER) == 0,
 		    ("marker page %p was dequeued", m));
 
