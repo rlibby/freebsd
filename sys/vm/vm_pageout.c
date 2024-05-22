@@ -202,6 +202,11 @@ SYSCTL_ULONG(_vm, OID_AUTO, max_user_wired, CTLFLAG_RW,
     &vm_page_max_user_wired, 0,
     "system-wide limit to user-wired page count");
 
+static u_int vm_pageout_inactive_scan_deferred_free = 0;
+SYSCTL_UINT(_vm, OID_AUTO, pageout_inactive_scan_deferred_free, CTLFLAG_RWTUN,
+    &vm_pageout_inactive_scan_deferred_free, 0,
+    "defer freeing the pages");
+
 static u_int isqrt(u_int num);
 static int vm_pageout_launder(struct vm_domain *vmd, int launder,
     bool in_shortfall);
@@ -1415,11 +1420,21 @@ vm_pageout_reinsert_inactive(struct scan_state *ss, struct vm_batchqueue *bq,
 }
 
 static void
+vm_pageout_deferred_free(struct vm_batchqueue *tofree)
+{
+	int i;
+
+	for (i = 0; i < tofree->bq_cnt; i++)
+		vm_page_free(tofree->bq_pa[i]);
+	vm_batchqueue_init(tofree);
+}
+
+static void
 vm_pageout_scan_inactive(struct vm_domain *vmd, int page_shortage)
 {
 	struct timeval start, end;
 	struct scan_state ss;
-	struct vm_batchqueue rq;
+	struct vm_batchqueue rq, tofree;
 	struct vm_page marker_page;
 	vm_page_t m, marker;
 	struct vm_pagequeue *pq;
@@ -1429,6 +1444,7 @@ vm_pageout_scan_inactive(struct vm_domain *vmd, int page_shortage)
 
 	object = NULL;
 	vm_batchqueue_init(&rq);
+	vm_batchqueue_init(&tofree);
 	getmicrouptime(&start);
 
 	/*
@@ -1453,14 +1469,19 @@ vm_pageout_scan_inactive(struct vm_domain *vmd, int page_shortage)
 	vm_pageout_init_scan(&ss, pq, marker, NULL, pq->pq_cnt);
 	while (page_shortage > 0) {
 		/*
-		 * If we need to refill the scan batch queue, release any
-		 * optimistically held object lock.  This gives someone else a
-		 * chance to grab the lock, and also avoids holding it while we
-		 * do unrelated work.
+		 * If we need to refill the scan batch queue, or if the queue
+		 * of deferred free pages is full, release any optimistically
+		 * held object lock and free the pages.  This gives someone
+		 * else a chance to grab the lock, and also avoids holding it
+		 * while we do unrelated work.
 		 */
-		if (object != NULL && vm_batchqueue_empty(&ss.bq)) {
-			VM_OBJECT_WUNLOCK(object);
-			object = NULL;
+		if (vm_batchqueue_empty(&ss.bq) ||
+		    tofree.bq_cnt == nitems(tofree.bq_pa)) {
+			if (object != NULL) {
+				VM_OBJECT_WUNLOCK(object);
+				object = NULL;
+			}
+			vm_pageout_deferred_free(&tofree);
 		}
 
 		m = vm_pageout_next(&ss, true);
@@ -1484,6 +1505,7 @@ vm_pageout_scan_inactive(struct vm_domain *vmd, int page_shortage)
 		if (object == NULL || object != m->object) {
 			if (object != NULL)
 				VM_OBJECT_WUNLOCK(object);
+			vm_pageout_deferred_free(&tofree);
 			object = atomic_load_ptr(&m->object);
 			if (__predict_false(object == NULL))
 				/* The page is being freed by another thread. */
@@ -1621,7 +1643,13 @@ free_page:
 			 * without holding the queue lock.
 			 */
 			m->a.queue = PQ_NONE;
-			vm_page_free(m);
+			if (vm_pageout_inactive_scan_deferred_free) {
+				if (!vm_page_remove(m))
+					panic("%s: not the last reference, "
+					    "m=%p, o=%p", __func__, m, object);
+				vm_batchqueue_insert(&tofree, m);
+			} else
+				vm_page_free(m);
 			page_shortage--;
 			continue;
 		}
@@ -1635,6 +1663,7 @@ reinsert:
 	}
 	if (object != NULL)
 		VM_OBJECT_WUNLOCK(object);
+	vm_pageout_deferred_free(&tofree);
 	vm_pageout_reinsert_inactive(&ss, &rq, NULL);
 	vm_pageout_reinsert_inactive(&ss, &ss.bq, NULL);
 	vm_pagequeue_lock(pq);
