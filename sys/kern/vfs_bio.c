@@ -3914,6 +3914,22 @@ has_addr:
 	}
 }
 
+/* XXX reorganize */
+struct getblk_condwait_cbarg {
+	struct buf *bp;
+	struct bufobj *bo;
+	daddr_t lblkno;
+};
+
+static bool
+getblk_condwait_sleepok(void *varg)
+{
+	struct getblk_condwait_cbarg *arg = varg;
+
+	return (arg->bp->b_bufobj == arg->bo &&
+	    arg->bp->b_lblkno == arg->lblkno);
+}
+
 struct buf *
 getblk(struct vnode *vp, daddr_t blkno, int size, int slpflag, int slptimeo,
     int flags)
@@ -3974,10 +3990,11 @@ int
 getblkx(struct vnode *vp, daddr_t blkno, daddr_t dblkno, int size, int slpflag,
     int slptimeo, int flags, struct buf **bpp)
 {
+	struct getblk_condwait_cbarg gbcw;
 	struct buf *bp;
 	struct bufobj *bo;
 	daddr_t d_blkno;
-	int bsize, error, maxsize, vmio;
+	int bsize, error, lockflags, maxsize, vmio;
 	off_t offset;
 
 	CTR3(KTR_BUF, "getblk(%p, %ld, %d)", vp, (long)blkno, size);
@@ -4014,9 +4031,21 @@ getblkx(struct vnode *vp, daddr_t blkno, daddr_t dblkno, int size, int slpflag,
 		goto newbuf_unlocked;
 	}
 
-	error = BUF_TIMELOCK(bp, LK_EXCLUSIVE | LK_NOWAIT, NULL, "getblku", 0,
-	    0);
-	if (error != 0) {
+	lockflags = LK_EXCLUSIVE;
+	if ((flags & GB_LOCK_NOWAIT) != 0)
+		lockflags |= LK_NOWAIT;
+#ifdef WITNESS
+	if ((flags & GB_NOWITNESS) != 0)
+		lockflags |= LK_NOWITNESS;
+#endif
+
+	/* XXX need BUF_TIMELOCK wrapper */
+	gbcw.bp = bp;
+	gbcw.bo = bo;
+	gbcw.lblkno = blkno;
+	error = lockmgr_args_condwait(&bp->b_lock, lockflags, "getblku",
+	    PRIBIO + 4, 0, &bp->b_cwholders, getblk_condwait_sleepok, &gbcw);
+	if (error != 0 && (flags & GB_LOCK_NOWAIT) != 0) {
 		KASSERT(error == EBUSY,
 		    ("getblk: unexpected error %d from buf try-lock", error));
 		/*
@@ -4031,8 +4060,9 @@ getblkx(struct vnode *vp, daddr_t blkno, daddr_t dblkno, int size, int slpflag,
 		 */
 		if ((flags & GB_LOCK_NOWAIT) != 0)
 			return (error);
-		goto loop;
 	}
+	if (error != 0)
+		goto loop;
 
 	/* Verify buf identify has not changed since lookup. */
 	if (bp->b_bufobj == bo && bp->b_lblkno == blkno)
@@ -4049,8 +4079,6 @@ loop:
 	BO_RLOCK(bo);
 	bp = gbincore(bo, blkno);
 	if (bp != NULL) {
-		int lockflags;
-
 		/*
 		 * Buffer is in-core.  If the buffer is not busy nor managed,
 		 * it must be on a queue.

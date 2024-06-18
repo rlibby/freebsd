@@ -116,6 +116,7 @@ struct buf {
 	uint32_t	b_flags;	/* B_* flags. */
 	b_xflags_t b_xflags;		/* extra flags */
 	struct lock b_lock;		/* Buffer lock */
+	u_int	b_cwholders;		/* atomic condwait lock holder count */
 	long	b_bufsize;		/* Allocated buffer size. */
 	int	b_runningbufspace;	/* when I/O is running, pipelining */
 	int	b_kvasize;		/* size of kva for buffer */

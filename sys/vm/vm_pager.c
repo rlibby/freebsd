@@ -506,6 +506,7 @@ pbuf_init(void *mem, int size, int flags)
 		return (ENOMEM);
 	bp->b_kvasize = ptoa(PBUF_PAGES);
 	BUF_LOCKINIT(bp, pbuf_wmesg);
+	bp->b_cwholders = 0;
 	LIST_INIT(&bp->b_dep);
 	bp->b_rcred = bp->b_wcred = NOCRED;
 	bp->b_xflags = 0;
