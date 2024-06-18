@@ -3914,6 +3914,15 @@ has_addr:
 	}
 }
 
+bool
+buf_lock_condwait_can_wait(void *varg)
+{
+	struct buf_lock_condwait_cbarg *arg = varg;
+
+	return (arg->cw_bp->b_bufobj == arg->cw_bo &&
+	    arg->cw_bp->b_lblkno == arg->cw_lblkno);
+}
+
 struct buf *
 getblk(struct vnode *vp, daddr_t blkno, int size, int slpflag, int slptimeo,
     int flags)
@@ -3977,7 +3986,7 @@ getblkx(struct vnode *vp, daddr_t blkno, daddr_t dblkno, int size, int slpflag,
 	struct buf *bp;
 	struct bufobj *bo;
 	daddr_t d_blkno;
-	int bsize, error, maxsize, vmio;
+	int bsize, error, lockflags, maxsize, vmio;
 	off_t offset;
 
 	CTR3(KTR_BUF, "getblk(%p, %ld, %d)", vp, (long)blkno, size);
@@ -4014,9 +4023,17 @@ getblkx(struct vnode *vp, daddr_t blkno, daddr_t dblkno, int size, int slpflag,
 		goto newbuf_unlocked;
 	}
 
-	error = BUF_TIMELOCK(bp, LK_EXCLUSIVE | LK_NOWAIT, NULL, "getblku", 0,
+	lockflags = LK_EXCLUSIVE;
+	if ((flags & GB_LOCK_NOWAIT) != 0)
+		lockflags |= LK_NOWAIT;
+#ifdef WITNESS
+	if ((flags & GB_NOWITNESS) != 0)
+		lockflags |= LK_NOWITNESS;
+#endif
+
+	error = BUF_TIMELOCK_CONDWAIT(bp, bo, blkno, lockflags, "getblku", 0,
 	    0);
-	if (error != 0) {
+	if (error != 0 && (flags & GB_LOCK_NOWAIT) != 0) {
 		KASSERT(error == EBUSY,
 		    ("getblk: unexpected error %d from buf try-lock", error));
 		/*
@@ -4031,8 +4048,9 @@ getblkx(struct vnode *vp, daddr_t blkno, daddr_t dblkno, int size, int slpflag,
 		 */
 		if ((flags & GB_LOCK_NOWAIT) != 0)
 			return (error);
-		goto loop;
 	}
+	if (error != 0)
+		goto loop;
 
 	/* Verify buf identify has not changed since lookup. */
 	if (bp->b_bufobj == bo && bp->b_lblkno == blkno)
@@ -4049,8 +4067,6 @@ loop:
 	BO_RLOCK(bo);
 	bp = gbincore(bo, blkno);
 	if (bp != NULL) {
-		int lockflags;
-
 		/*
 		 * Buffer is in-core.  If the buffer is not busy nor managed,
 		 * it must be on a queue.

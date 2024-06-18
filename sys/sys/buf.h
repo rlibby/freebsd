@@ -314,6 +314,27 @@ struct buf {
 	    (interlock), (wmesg), (PRIBIO + 4) | (catch), (timo),	\
 	    LOCK_FILE, LOCK_LINE)
 
+struct buf_lock_condwait_cbarg {
+	struct buf *cw_bp;
+	struct bufobj *cw_bo;
+	daddr_t cw_lblkno;
+};
+bool buf_lock_condwait_can_wait(void *);
+/*
+ * Get a lock sleeping with specified interruptibility and timeout without
+ * holding the bufobj interlock.  The bufobj and lblkno used in the lookup of
+ * the buf must be passed in as bo and lblkno, but they must not be derived
+ * from the buf itself.  As with other buf locks acquired without the
+ * interlock, the buf identity should be re-checked upon success.
+ */
+#define	BUF_TIMELOCK_CONDWAIT(bp, bo, lblkno, locktype, wmesg, catch,	\
+    timo)								\
+	lockmgr_args_condwait(&(bp)->b_lock, (locktype) | LK_TIMELOCK,	\
+	    (wmesg), (PRIBIO + 4) | (catch), (timo),			\
+	    buf_lock_condwait_can_wait,					\
+	    (&(struct buf_lock_condwait_cbarg){.cw_bp = (bp),		\
+	    .cw_bo = (bo), .cw_lblkno = (lblkno)}))
+
 /*
  * Release a lock. Only the acquiring process may free the lock unless
  * it has been handed off to biodone.
