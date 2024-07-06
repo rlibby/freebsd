@@ -538,9 +538,9 @@ name##_RB_INSERT_COLOR(struct name *head,				\
 	 * So the first loop iteration cannot lead to accessing an      \
 	 * uninitialized 'child', and a later iteration can only happen \
 	 * when a value has been assigned to 'child' in the previous    \
-	 * one.								\
+	 * one.  Nevertheless, initialize 'child' to appease GCC.	\
 	 */								\
-	struct type *child, *child_up, *gpar;				\
+	struct type *child = NULL, *child_up, *gpar;			\
 	__uintptr_t elmdir, sibdir;					\
 									\
 	do {								\
