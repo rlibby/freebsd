@@ -107,10 +107,9 @@ mv88e151x_attach(device_t dev)
 	PHY_RESET(sc);
 	sc->mii_capabilities = PHY_READ(sc, MII_BMSR) & sc->mii_capmask;
 	cop_cap = sc->mii_capabilities;
-	if (sc->mii_capabilities & BMSR_EXTSTAT) {
+	if (sc->mii_capabilities & BMSR_EXTSTAT)
 		sc->mii_extcapabilities = PHY_READ(sc, MII_EXTSR);
-		cop_extcap = sc->mii_extcapabilities;
-	}
+	cop_extcap = sc->mii_extcapabilities;
 	device_printf(dev, " ");
 	if (MII_MODEL(ma->mii_id2) == MII_MODEL_xxMARVELL_E1512)
 		sc->mii_capabilities &= ~BMSR_ANEG;
@@ -224,10 +223,12 @@ mv88e151x_fiber_status(struct mii_softc *phy)
 		else if (reg & MV88E151X_STATUS_LINK &&
 		    reg & MV88E151X_STATUS_SYNC &&
 		    (reg & MV88E151X_STATUS_ENERGY) == 0) {
-			if ((reg & MV88E151X_STATUS_SPEED_MASK) ==
+			if (((reg & MV88E151X_STATUS_SPEED_MASK) >>
+			    MV88E151X_STATUS_SPEED_SHIFT) ==
 			    MV88E151X_STATUS_SPEED_1000)
 				mii->mii_media_active |= IFM_1000_SX;
-			else if ((reg & MV88E151X_STATUS_SPEED_MASK) ==
+			else if (((reg & MV88E151X_STATUS_SPEED_MASK) >>
+			    MV88E151X_STATUS_SPEED_SHIFT) ==
 			    MV88E151X_STATUS_SPEED_100)
 				mii->mii_media_active |= IFM_100_FX;
 			else
