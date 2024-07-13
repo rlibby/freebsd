@@ -764,6 +764,7 @@ cpu_search_lowest(const struct cpu_group *cg, const struct cpu_search *s,
 	total = 0;
 	bload = INT_MAX;
 	r->csr_cpu = -1;
+	r->csr_load = INT_MAX;
 
 	/* Loop through children CPU groups if there are any. */
 	if (cg->cg_children > 0) {
@@ -846,6 +847,7 @@ cpu_search_highest(const struct cpu_group *cg, const struct cpu_search *s,
 	total = 0;
 	bload = INT_MIN;
 	r->csr_cpu = -1;
+	r->csr_load = INT_MIN;
 
 	/* Loop through children CPU groups if there are any. */
 	if (cg->cg_children > 0) {
