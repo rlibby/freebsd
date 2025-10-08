@@ -322,6 +322,11 @@ struct {								\
 	struct type *rbe_link[3];					\
 }
 
+/* (Mis)inform the compiler that an object has been initialized. */
+#define _RB_FAKE_INIT(x)	do {					\
+	__asm("" : "=r" (x));						\
+} while (0)
+
 /*
  * With the expectation that any object of struct type has an
  * address that is a multiple of 4, and that therefore the
@@ -542,6 +547,8 @@ name##_RB_INSERT_COLOR(struct name *head,				\
 	 */								\
 	struct type *child, *child_up, *gpar;				\
 	__uintptr_t elmdir, sibdir;					\
+									\
+	_RB_FAKE_INIT(child);						\
 									\
 	do {								\
 		/* the rank of the tree rooted at elm grew */		\
