@@ -524,6 +524,11 @@ name##_RB_RANK(struct type *elm)					\
 #define RB_GENERATE_RANK(name, type, field, attr)
 #endif
 
+#define _RB_ASSUME(expr)	do {					\
+	if (!(expr))							\
+		__unreachable();					\
+} while (0)
+
 #define RB_GENERATE_INSERT_COLOR(name, type, field, attr)		\
 attr struct type *							\
 name##_RB_INSERT_COLOR(struct name *head,				\
@@ -543,7 +548,14 @@ name##_RB_INSERT_COLOR(struct name *head,				\
 	struct type *child, *child_up, *gpar;				\
 	__uintptr_t elmdir, sibdir;					\
 									\
-	do {								\
+	/*gpar = _RB_UP(parent, field);					\
+	if ((_RB_BITS(gpar) & _RB_LR) == _RB_LR) {			\
+		__unreachable();					\
+		return NULL;						\
+	}*/								\
+	_RB_ASSUME((_RB_BITSUP(elm, field) & _RB_LR) == 0);		\
+									\
+	for (;;) {							\
 		/* the rank of the tree rooted at elm grew */		\
 		gpar = _RB_UP(parent, field);				\
 		elmdir = RB_RIGHT(parent, field) == elm ? _RB_R : _RB_L; \
@@ -555,79 +567,81 @@ name##_RB_INSERT_COLOR(struct name *head,				\
 		sibdir = elmdir ^ _RB_LR;				\
 		/* the other edge must change length */			\
 		_RB_MOD_XOR(_RB_UP(parent, field), sibdir);		\
-		if ((_RB_BITS(gpar) & _RB_LR) == 0) {			\
-			/* both edges now short, retry from parent */	\
-			child = elm;					\
-			elm = parent;					\
-			continue;					\
-		}							\
-		_RB_UP(parent, field) = gpar = _RB_PTR(gpar);		\
-		if (_RB_BITSUP(elm, field) & elmdir) {			\
-			/*						\
-			 * Exactly one of the edges descending from elm \
-			 * is long. The long one is in the same		\
-			 * direction as the edge from parent to elm,	\
-			 * so change that by rotation.  The edge from	\
-			 * parent to z was shortened above.  Shorten	\
-			 * the long edge down from elm, and adjust	\
-			 * other edge lengths based on the downward	\
-			 * edges from 'child'.				\
-			 *						\
-			 *	     par		 par		\
-			 *	    /	\		/   \		\
-			 *	  elm	 z	       /     z		\
-			 *	 /  \		     child		\
-			 *	/  child	     /	 \		\
-			 *     /   /  \		   elm	  \		\
-			 *    w	  /    \	  /   \    y		\
-			 *	 x      y	 w     \		\
-			 *				x		\
-			 */						\
-			RB_ROTATE(elm, child, elmdir, field);		\
-			child_up = _RB_UP(child, field);		\
-			if (_RB_BITS(child_up) & sibdir)		\
-				_RB_MOD_XOR(_RB_UP(parent, field),	\
-				    elmdir); 				\
-			if (_RB_BITS(child_up) & elmdir)		\
-				_RB_MOD_XOR(_RB_UP(elm, field),		\
-				    _RB_LR);				\
-			else						\
-				_RB_MOD_XOR(_RB_UP(elm, field),		\
-				    elmdir);				\
-			/* if child is a leaf, don't augment elm,	\
-			 * since it is restored to be a leaf again. */	\
-			if ((_RB_BITS(child_up) & _RB_LR) == 0)		\
-				elm = child;				\
-		} else							\
-			child = elm;					\
+		if (gpar == NULL)				\
+			return (NULL);				\
+		if ((_RB_BITS(gpar) & _RB_LR) != 0) 			\
+			break;						\
+		/* both edges now short, retry from parent */	\
+		child = elm;					\
+		elm = parent;					\
+		parent = gpar;					\
+	}								\
 									\
-		/*							\
-		 * The long edge descending from 'child' points back	\
-		 * in the direction of 'parent'. Rotate to make		\
-		 * 'parent' a child of 'child', then make both edges	\
-		 * of 'child' short to rebalance.			\
-		 *							\
-		 *	     par		 child			\
-		 *	    /	\		/     \			\
-		 *	   /	 z	       x       par		\
-		 *	child			      /	  \		\
-		 *	 /  \			     /	   z		\
-		 *	x    \			    y			\
-		 *	      y						\
-		 */							\
-		RB_ROTATE(parent, child, sibdir, field);		\
-		_RB_UP(child, field) = gpar;				\
-		RB_SWAP_CHILD(head, gpar, parent, child, field);	\
-		/*							\
-		 * Elements rotated down have new, smaller subtrees,	\
-		 * so update augmentation for them.			\
-		 */							\
-		if (elm != child)					\
-			(void)RB_AUGMENT_CHECK(elm);			\
-		(void)RB_AUGMENT_CHECK(parent);				\
-		return (child);						\
-	} while ((parent = gpar) != NULL);				\
-	return (NULL);							\
+	_RB_UP(parent, field) = gpar = _RB_PTR(gpar);		\
+	if (_RB_BITSUP(elm, field) & elmdir) {			\
+		/*						\
+		 * Exactly one of the edges descending from elm \
+		 * is long. The long one is in the same		\
+		 * direction as the edge from parent to elm,	\
+		 * so change that by rotation.  The edge from	\
+		 * parent to z was shortened above.  Shorten	\
+		 * the long edge down from elm, and adjust	\
+		 * other edge lengths based on the downward	\
+		 * edges from 'child'.				\
+		 *						\
+		 *	     par		 par		\
+		 *	    /	\		/   \		\
+		 *	  elm	 z	       /     z		\
+		 *	 /  \		     child		\
+		 *	/  child	     /	 \		\
+		 *     /   /  \		   elm	  \		\
+		 *    w	  /    \	  /   \    y		\
+		 *	 x      y	 w     \		\
+		 *				x		\
+		 */						\
+		RB_ROTATE(elm, child, elmdir, field);		\
+		child_up = _RB_UP(child, field);		\
+		if (_RB_BITS(child_up) & sibdir)		\
+			_RB_MOD_XOR(_RB_UP(parent, field),	\
+			    elmdir); 				\
+		if (_RB_BITS(child_up) & elmdir)		\
+			_RB_MOD_XOR(_RB_UP(elm, field),		\
+			    _RB_LR);				\
+		else						\
+			_RB_MOD_XOR(_RB_UP(elm, field),		\
+			    elmdir);				\
+		/* if child is a leaf, don't augment elm,	\
+		 * since it is restored to be a leaf again. */	\
+		if ((_RB_BITS(child_up) & _RB_LR) == 0)		\
+			elm = child;				\
+	} else							\
+		child = elm;					\
+								\
+	/*							\
+	 * The long edge descending from 'child' points back	\
+	 * in the direction of 'parent'. Rotate to make		\
+	 * 'parent' a child of 'child', then make both edges	\
+	 * of 'child' short to rebalance.			\
+	 *							\
+	 *	     par		 child			\
+	 *	    /	\		/     \			\
+	 *	   /	 z	       x       par		\
+	 *	child			      /	  \		\
+	 *	 /  \			     /	   z		\
+	 *	x    \			    y			\
+	 *	      y						\
+	 */							\
+	RB_ROTATE(parent, child, sibdir, field);		\
+	_RB_UP(child, field) = gpar;				\
+	RB_SWAP_CHILD(head, gpar, parent, child, field);	\
+	/*							\
+	 * Elements rotated down have new, smaller subtrees,	\
+	 * so update augmentation for them.			\
+	 */							\
+	if (elm != child)					\
+		(void)RB_AUGMENT_CHECK(elm);			\
+	(void)RB_AUGMENT_CHECK(parent);				\
+	return (child);						\
 }
 
 #ifndef RB_STRICT_HST
