@@ -90,6 +90,10 @@ NO_WSTRINGOP_OVERREAD=	-Wno-stringop-overread
 .endif
 .endif
 
+# The kernel does not permit executable stacks.  GCC may want to generate
+# trampolines using executable stacks for indirect calls to nested functions.
+CWARNFLAGS+=	-Wtrampolines
+
 # GCC produces false positives for functions that switch on an
 # enum (GCC bug 87950)
 CWARNFLAGS+=	-Wno-return-type
@@ -351,6 +355,11 @@ CFLAGS+=	-gdwarf-4
 CFLAGS+= ${CWARNFLAGS:M*} ${CWARNFLAGS.${.IMPSRC:T}}
 CFLAGS+= ${CWARNFLAGS.${COMPILER_TYPE}}
 CFLAGS+= ${CFLAGS.${COMPILER_TYPE}} ${CFLAGS.${.IMPSRC:T}}
+
+# The kernel does not permit executable stacks, and it does not obey
+# .note.GNU-stack sections.  Pass -znoexecstack anyway as it is already the
+# default for LLD and it avoids executable stack warnings for BFD.
+LDFLAGS+= -Wl,-znoexecstack
 
 # Tell bmake not to mistake standard targets for things to be searched for
 # or expect to ever be up-to-date.
