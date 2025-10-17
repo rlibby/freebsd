@@ -79,7 +79,7 @@ linux_vdso_gtod.o: linux_vdso_gtod.inc ${VDSODEPS}
 linux_vdso.so.o: linux_locore.o linux_vdso_gtod.o
 	${LD} --shared --eh-frame-hdr -soname=linux-vdso.so.1 \
 	--no-undefined --hash-style=both -warn-common -nostdlib \
-	--strip-debug -s --build-id=sha1 -Bsymbolic \
+	--strip-debug -s --build-id=sha1 -znoexecstack -Bsymbolic \
 	-T${SRCTOP}/sys/${MACHINE}/linux/linux_vdso.lds.s \
 	-o ${.TARGET} ${.ALLSRC:M*.o}
 
