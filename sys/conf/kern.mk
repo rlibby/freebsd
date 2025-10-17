@@ -353,6 +353,11 @@ CFLAGS+= ${CWARNFLAGS:M*} ${CWARNFLAGS.${.IMPSRC:T}}
 CFLAGS+= ${CWARNFLAGS.${COMPILER_TYPE}}
 CFLAGS+= ${CFLAGS.${COMPILER_TYPE}} ${CFLAGS.${.IMPSRC:T}}
 
+# The kernel doesn't care about .note.GNU-stack sections, but -znoexecstack is
+# already the default for LLD and specifying it for BFD avoids executable stack
+# warnings.
+LDFLAGS+= -Wl,-znoexecstack
+
 # Tell bmake not to mistake standard targets for things to be searched for
 # or expect to ever be up-to-date.
 PHONY_NOTMAIN = afterdepend afterinstall all beforedepend beforeinstall \
