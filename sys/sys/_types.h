@@ -56,6 +56,17 @@ typedef	unsigned long long	__uint64_t;
 #error unsupported long size
 #endif
 
+#define	__SIZEOF_INT8_T		__SIZEOF_CHAR__
+#define	__SIZEOF_INT16_T	__SIZEOF_SHORT__
+#define	__SIZEOF_INT32_T	__SIZEOF_INT__
+#if __SIZEOF_LONG__ == 8
+#define	__SIZEOF_INT64_T	__SIZEOF_LONG__
+#elif __SIZEOF_LONG__ == 4
+#define	__SIZEOF_INT64_T	__SIZEOF_LONG_LONG__
+#else
+#error unsupported long size
+#endif
+
 typedef	__int8_t	__int_least8_t;
 typedef	__int16_t	__int_least16_t;
 typedef	__int32_t	__int_least32_t;
