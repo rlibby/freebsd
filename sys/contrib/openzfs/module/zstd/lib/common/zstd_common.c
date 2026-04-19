@@ -16,8 +16,8 @@
 ***************************************/
 #define ZSTD_DEPS_NEED_MALLOC
 #include "error_private.h"
-#include "zstd_internal.h"
-
+//#include "zstd_internal.h"
+#include "../zstd.h"
 
 /*-****************************************
 *  Version
@@ -30,12 +30,14 @@ const char* ZSTD_versionString(void) { return ZSTD_VERSION_STRING; }
 /*-****************************************
 *  ZSTD Error Management
 ******************************************/
+#if 0
 #undef ZSTD_isError   /* defined within zstd_internal.h */
 /*! ZSTD_isError() :
  *  tells if a return value is an error code
  *  symbol is required for external callers */
 #if !defined(_STANDALONE)
 unsigned ZSTD_isError(size_t code) __asm__("zfs_ZSTD_isError");
+#endif
 #endif
 unsigned ZSTD_isError(size_t code) { return ERR_isError(code); }
 
