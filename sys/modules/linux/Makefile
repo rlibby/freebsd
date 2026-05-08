@@ -113,7 +113,7 @@ linux${SFX}_vdso_gtod.o: linux_vdso_gtod.inc ${VDSODEPS}
 linux${SFX}_vdso.so.o: linux${SFX}_locore.o linux${SFX}_vdso_gtod.o
 	${LD} -m elf_i386 --shared --eh-frame-hdr -soname=linux-gate.so.1 \
 	--no-undefined --hash-style=both -warn-common -nostdlib \
-	--strip-debug -s --build-id=sha1 -znoexecstack -Bsymbolic \
+	--strip-debug -s --build-id=sha1 --Bsymbolic \
 	-T${SRCTOP}/sys/${MACHINE}/linux${SFX}/linux${SFX}_vdso.lds.s \
 	-o ${.TARGET} ${.ALLSRC:M*.o}
 
