@@ -50,3 +50,5 @@ IDTVEC(vmbus_isr)
 	call	*%eax
 	add	$4, %esp
 	jmp	doreti
+
+	.section .note.GNU-stack,"",%progbits
