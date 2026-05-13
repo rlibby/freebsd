@@ -1402,9 +1402,12 @@ void
 sbcompress(struct sockbuf *sb, struct mbuf *m, struct mbuf *n)
 {
 	int eor = 0;
-	struct mbuf *o;
+	struct mbuf *o, **pnext;
 
 	SOCKBUF_LOCK_ASSERT(sb);
+
+	pnext = (n == NULL) ? &sb->sb_mb : &n->m_next;
+	*pnext = m;
 
 	while (m) {
 		eor |= m->m_flags & M_EOR;
@@ -1415,6 +1418,7 @@ sbcompress(struct sockbuf *sb, struct mbuf *m, struct mbuf *n)
 			if (sb->sb_lastrecord == m)
 				sb->sb_lastrecord = m->m_next;
 			m = m_free(m);
+			*pnext = m;
 			continue;
 		}
 		if (n && (n->m_flags & M_EOR) == 0 &&
@@ -1436,27 +1440,26 @@ sbcompress(struct sockbuf *sb, struct mbuf *m, struct mbuf *n)
 				/* XXX: Probably don't need.*/
 				sb->sb_ctl += m->m_len;
 			m = m_free(m);
+			n->m_next = m;
 			continue;
 		}
 		if (m->m_len <= MLEN && (m->m_flags & M_EXTPG) &&
 		    (m->m_flags & M_NOTREADY) == 0 &&
 		    !mbuf_has_tls_session(m))
 			(void)mb_unmapped_compress(m);
-		if (n)
-			n->m_next = m;
-		else
-			sb->sb_mb = m;
-		sb->sb_mbtail = m;
 		sballoc(sb, m);
 		n = m;
-		m->m_flags &= ~M_EOR;
+		/* Clear M_EOR, but avoid dirtying new mbufs. */
+		if ((m->m_flags & M_EOR) != 0)
+			m->m_flags &= ~M_EOR;
 		m = m->m_next;
-		n->m_next = 0;
+		pnext = &n->m_next;
 	}
 	if (eor) {
 		KASSERT(n != NULL, ("sbcompress: eor && n == NULL"));
 		n->m_flags |= eor;
 	}
+	sb->sb_mbtail = n;
 	SBLASTMBUFCHK(sb);
 }
 
